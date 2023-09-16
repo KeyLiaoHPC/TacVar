@@ -18,12 +18,15 @@
 #include "argp.h"
 #include "filt.h"
 
+#ifndef NTILE
+#define NTILE 1000
+#endif
+
 
 /*=== ARGP ===*/
 static struct argp_option options[] = {
     {"met-file", 'm', "FILE", 0, "Input measurement file", 0},
     {"sample-file", 's', "FILE", 0, "Input timing fluctuation file", 0},
-    {"hz-ns", 'g', "FREQ", 0, "Tick per ns of the clock", 0},
     {"width", 'w', "TIME", 0, "The least interval of a time bin (ns).", 0},
     {"nsamp", 'n', "NSAMP", 0, "Number of samples in each optimization step", 0},
     {"plow", 'l', "PROB", 0, "Lowest threshold of possibility of a data bin", 0},
@@ -131,6 +134,59 @@ sim_met(prob_hist_t *tmh, prob_hist_t *trh, i64 *tf_arr, u64 tf_len, double *psi
         psim[isim] = psim[isim] / (double)nsamp;
     }
 
+    free(ptrhc);
+
+    return 0;
+}
+
+
+int
+sim_verify(prob_hist_t *tmh, prob_hist_t *trh, i64 *tf_arr, u64 tf_len, i64 *sim_cdf, u64 nsamp) {
+    u64 nbin = tmh->nbin;
+    i64 *sim_arr;
+    double *ptrhc, trpmax; // Cumulative probabilities of trh.
+    struct timeval tv;
+
+    ptrhc = (double *)malloc(nbin*sizeof(double));
+    sim_arr = (i64 *)malloc(nsamp*sizeof(i64));
+
+    gettimeofday(&tv, NULL);
+    srand(tv.tv_sec * 1e6 + tv.tv_usec);
+
+    // Calculating tr's cumulative probability
+    ptrhc[0] = 0.0;
+    for (u64 ir = 1; ir < nbin; ir ++) {
+        ptrhc[ir] = ptrhc[ir-1] + trh->pbin[ir-1].p;
+    }
+    trpmax = ptrhc[nbin-1];
+    
+    for (u64 isamp = 0; isamp < nsamp; isamp ++){
+        // mul trpmax to scaling for the little error from trpmax to 1.0
+        register double px = (double)rand() / (double)RAND_MAX * trpmax;
+        register i64 tf = tf_arr[(u64)((double)rand() / (double)RAND_MAX * (double)tf_len)];
+        for (u64 ir = 0; ir < nbin - 1; ir ++) {
+            if (px < ptrhc[ir+1]) {
+                register i64 tsim;
+                register double p0, p1, t0, t1, tx;
+                p0 = ptrhc[ir];
+                p1 = ptrhc[ir+1];
+                t0 = trh->pbin[ir].t;
+                t1 = trh->pbin[ir+1].t;
+                tx = t0 + (px - p0) * (t1 - t0) / (p1 - p0);
+                sim_arr[isamp] = (i64)tx + tf;
+                break;
+            }
+        }
+    }
+
+    qsort(sim_arr, nsamp, sizeof(i64), cmp);
+
+    for (int i = 0; i < NTILE; i ++) {
+        sim_cdf[i] = sim_arr[abs((int)(((double)i/(double)NTILE)*(double)nsamp))];
+    }
+    sim_cdf[NTILE] = sim_arr[nsamp-1];
+
+    free(sim_arr);
     free(ptrhc);
 
     return 0;
@@ -409,7 +465,7 @@ read_csv(char *fpath, double pcut, u64 *len, i64 **arr){
 }
 
 int
-run_filt(filt_param_t *args, prob_hist_t *tr_hist){
+run_filt(filt_param_t *args, prob_hist_t *tr_hist, i64 *sim_cdf){
     u64 tm_len, tf_len;
     i64 *tm_arr, *tf_arr;
     prob_hist_t tm_hist;
@@ -445,6 +501,10 @@ run_filt(filt_param_t *args, prob_hist_t *tr_hist){
         return err;
     }
 
+    printf("[FilT-run_filt] Verifying the estimation...");
+    sim_verify(&tm_hist, tr_hist, tf_arr, tf_len, sim_cdf, args->nsamp);
+    printf("Done.\n");
+
     free(tm_arr);
     free(tf_arr);
     free(tm_hist.pbin);
@@ -465,10 +525,12 @@ main(int argc, char **argv){
     filt_param_t args;
     prob_hist_t tr_hist;
     int err;
+    i64 sim_cdf[NTILE+1];
     
     args.in_tm_file = "met.csv";
     args.in_tf_file = "tf.csv";
-    args.out_tr_file = "tr_hist.csv";
+    args.out_trh_file = "tr_hist.csv";
+    args.out_sim_file = "sim_cdf.csv";
     args.width = 100;
     args.nsamp = 1000000;
     args.p_low = 0.001;
@@ -485,17 +547,24 @@ main(int argc, char **argv){
             args.p_low, args.width, args.nsamp, args.p_xcut, args.p_ycut);
 
     // Reading input files and estimating the real run time distribution.
-    err = run_filt(&args, &tr_hist);
+    err = run_filt(&args, &tr_hist, sim_cdf);
 
     if (err == 0) {
-        printf("[FilT-main] Writing results to %s\n", args.out_tr_file);
-        FILE *fp = fopen(args.out_tr_file, "w");
+        printf("[FilT-main] Writing results to %s...", args.out_trh_file);
+        FILE *fp = fopen(args.out_trh_file, "w");
         for (i64 i = 0; i < tr_hist.nbin; i ++) {
             fprintf(fp, "%lld, %lf\n", tr_hist.pbin[i].t, tr_hist.pbin[i].p);
         }
         fclose(fp);
         free(tr_hist.pbin);
-        printf("[FilT-main] Done.\n");
+        printf("Done.\n");
+        printf("[FilT-main] Writing verification simulation results to %s...", args.out_sim_file);
+        fp = fopen(args.out_sim_file, "w");
+        for (int i = 0; i < NTILE+1; i ++) {
+            fprintf(fp, "%d, %lld\n", i, sim_cdf[i]);
+        }
+        fclose(fp);
+        printf("Done.\n");
     } else {
         printf("[FilT-main] run_filt returned with errors. ERRCODE %d\n", err);
         return err;

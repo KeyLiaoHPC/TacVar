@@ -20,7 +20,8 @@ typedef struct FilT_Param_T {
     double p_xcut, p_ycut;  // Cut the highest fraction.
     char *in_tm_file;       // Input measurement results.
     char *in_tf_file;       // Input timing fluctuation samples.
-    char *out_tr_file;      // Output real time estimation.
+    char *out_trh_file;      // Output real time estimation.
+    char *out_sim_file;      // Output real time estimation.
 } filt_param_t;
 
 typedef struct Prob_Bin_T {
@@ -71,8 +72,9 @@ int read_csv(char *fpath, double pcut, u64 *len, i64 **arr);
  * Performing filtering with FilT, enclosing subroutines
  * @param args FilT parameters.
  * @param tr_hist Pointer to the histogram of filtered running times.
+ * @param sim_cdf The 1000-tile cdf of the verification simulation 
  */
-int run_filt(filt_param_t *args, prob_hist_t *tr_hist);
+int run_filt(filt_param_t *args, prob_hist_t *tr_hist, i64 *sim_cdf);
 
 /**
  * Comparing function for qsort.
@@ -102,5 +104,17 @@ int calc_tr(prob_hist_t *tmh, prob_hist_t *trh, i64 *tf_arr, u64 tf_len, filt_pa
  * @return int 
  */
 int sim_met(prob_hist_t *tmh, prob_hist_t *trh, i64 *tf_arr, u64 tf_len, double *psim, u64 nsamp);
+
+/**
+ * @brief 
+ * @param tmh 
+ * @param trh 
+ * @param tf_arr 
+ * @param tf_len 
+ * @param sim_cdf
+ * @param nsamp 
+ * @return int 
+ */
+int sim_verify(prob_hist_t *tmh, prob_hist_t *trh, i64 *tf_arr, u64 tf_len, i64 *sim_cdf, u64 nsamp);
 
 /*=== END: Interfaces ===*/
