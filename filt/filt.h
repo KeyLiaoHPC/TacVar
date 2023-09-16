@@ -1,5 +1,5 @@
 /**
- * @file filtv3.h 
+ * @file filt.h 
  * @author Key Liao
  * 
  */
@@ -13,19 +13,14 @@
 
 /*=== BEGIN: Global Variables ===*/
 
-
 typedef struct FilT_Param_T {
-    i64 ref_time;           // Reference running time (ns) of timing fluctuations.
-    i64 rnd;                // Rounding bin edge to an integer multiple of rnd.
-    u64 nsamp, nsim;        // Number of samples in a simulation, and the number of simulation for a bin
-    i64 step;
-    int met_col, tf_col;
+    u64 width;
+    u64 nsamp;              // Number of samples in a simulation, and the number of simulation for a bin
     double p_low;           // Lower threshold of probability ofa single bin
     double p_xcut, p_ycut;  // Cut the highest fraction.
-    double hz_ns;           // tick per nanosecond
-    char *in_tm_file;      // Input measurement results.
+    char *in_tm_file;       // Input measurement results.
     char *in_tf_file;       // Input timing fluctuation samples.
-    char *out_tr_file;     // Output real time estimation.
+    char *out_tr_file;      // Output real time estimation.
 } filt_param_t;
 
 typedef struct Prob_Bin_T {
@@ -56,28 +51,20 @@ typedef struct Prob_Hist_T {
  * The min width is larger than args->rnd, the min probability is larger than args->p_low
  * @param arr Input array being sliced.
  * @param len The length of the input array.
- * @param rnd.
  * @param p_low.
- * @param p_cut.
+ * @param width.
  * @param phist A pointer to the histogram of sliced running times.
  */
-int slice(i64 *arr, u64 len, i64 rnd, double p_low, double p_cut, prob_hist_t *phist);
+int slice(i64 *arr, u64 len, double p_low, i64 width, prob_hist_t *phist);
 
 /**
- * Parsing csv file, extracting timing number from csv and slicing the results.
+ * Reading csv file
  * @param fpath File path.
- * @param col The target column in csv file started from 0.
- * @param adj Adjustment of array
- * @param rnd Round the edge of bins.
- * @param hz_ns tick per ns.
- * @param p_low The lower threshold of probability per bin.
- * @param p_cut The highest probability being cut.
- * @param arr The sorted array.
+ * @param pcut The highest probability being cut.
  * @param len The length of returned array.
- * @param hist The parsed and sliced histogram.
+ * @param arr Data array.
  */
-int parse_csv(char *fpath, int col, i64 adj, i64 rnd, double hz_ns, double p_low, double p_hcut, 
-    u64 *len, i64 **arr,  prob_hist_t *hist);
+int read_csv(char *fpath, double pcut, u64 *len, i64 **arr);
 
 
 /**
@@ -102,7 +89,7 @@ int cmp(const void *a, const void *b);
  * @param args      
  * @return int 
  */
-int calc_tr(prob_hist_t *tmh, prob_hist_t *tfh, prob_hist_t *trh, i64 *tf_arr, u64 tf_len, filt_param_t *args);
+int calc_tr(prob_hist_t *tmh, prob_hist_t *trh, i64 *tf_arr, u64 tf_len, filt_param_t *args);
 
 /**
  * @brief 
@@ -114,6 +101,6 @@ int calc_tr(prob_hist_t *tmh, prob_hist_t *tfh, prob_hist_t *trh, i64 *tf_arr, u
  * @param args 
  * @return int 
  */
-int sim_met(prob_hist_t *tmh, prob_hist_t *trh, i64 *tf_arr, u64 tf_len, double *psim, filt_param_t *args);
+int sim_met(prob_hist_t *tmh, prob_hist_t *trh, i64 *tf_arr, u64 tf_len, double *psim, u64 nsamp);
 
 /*=== END: Interfaces ===*/
