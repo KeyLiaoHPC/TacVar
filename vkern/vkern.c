@@ -10,8 +10,13 @@
 #include <gsl/gsl_rng.h>
 #include "mpi.h"
 
-#ifdef USE_PAPI
+#if defined(USE_PAPI) || defined(USE_PAPIX)
 #include "papi.h"
+
+#elif defined(USE_LIKWID)
+#include "likwid-marker.h"
+#define NEV 20
+
 #endif
 
 // Warmup for 1000ms.
@@ -193,12 +198,12 @@ gen_walklist(uint64_t *len_list) {
 int
 main(int argc, char **argv) {
     int ntest;
-    register uint64_t a, b, c, d;
-    uint64_t *p_len, *p_cy, *p_ns;
-    uint64_t register cy0, cy1, ns0, ns1;
-    uint64_t mask = (1 << 30), tbase=TBASE, fsize = FSIZE, npf = 0; // npf: flush arr length
+    register uint64_t a, b, c;
+    uint64_t *p_len, *p_ns;
+    uint64_t register ns0, ns1;
+    uint64_t tbase=TBASE, fsize = FSIZE, npf = 0; // npf: flush arr length
     double *pf_a, *pf_b, *pf_c;
-    int myrank, mycpu, nrank, errid;
+    int myrank, nrank, errid;
 #ifdef UNIFORM
     uint64_t v1 = V1, v2 = V2;
 
@@ -216,7 +221,6 @@ main(int argc, char **argv) {
     }
     MPI_Comm_size(MPI_COMM_WORLD, &nrank);
 	MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
-    mycpu = sched_getcpu();
 
 
 #ifdef UNIFORM
@@ -231,6 +235,28 @@ main(int argc, char **argv) {
     PAPI_library_init(PAPI_VER_CURRENT);
     PAPI_create_eventset(&eventset);
     PAPI_start(eventset);
+
+#elif USE_LIKWID
+    // Init LIKWID
+    double ev_vals_0[NEV]={0}, ev_vals_1[NEV]={0}, time;
+    int nev = NEV, count;
+    int64_t *p_ev;
+    LIKWID_MARKER_INIT;
+    LIKWID_MARKER_THREADINIT;
+    LIKWID_MARKER_REGISTER("vkern"); 
+    LIKWID_MARKER_REGISTER("nev_count"); 
+    LIKWID_MARKER_START("nev_count");
+    LIKWID_MARKER_STOP("nev_count");
+    LIKWID_MARKER_GET("nev_count", &nev, (double *)ev_vals_1, &time, &count);
+    if (myrank == 0) {
+        printf("LIKWID event count = %d\n", nev);
+    }
+    p_ev = (int64_t *)malloc(ntest * nev * sizeof(int64_t));
+    for (int iev = 0; iev < nev; iev ++) {
+        ev_vals_0[iev] = 0;
+        ev_vals_1[iev] = 0;
+    }
+
 #endif
 
     p_len = (uint64_t *)malloc(ntest * sizeof(uint64_t));
@@ -249,15 +275,15 @@ main(int argc, char **argv) {
 
     if (myrank == 0) {
 #ifdef UNIFORM
-        printf("Generating uniform ditribution. Tbase=%llu, interval=%llu, nint=%llu, Ntest=%llu.\n",
+        printf("Generating uniform ditribution. Tbase=%lu, interval=%lu, nint=%lu, Ntest=%u.\n",
             tbase, v1, v2, NTEST);
 
 #elif NORMAL
-        printf("Generating normal ditribution. Tbase=%llu, sigma=%.4f, Ntest=%llu.\n",
+        printf("Generating normal ditribution. Tbase=%lu, sigma=%.4f, Ntest=%lu.\n",
             tbase, v1, NTEST);
 
 #elif PARETO
-        printf("Generating Pareto ditribution. Tbase=%llu, alpha=%.4f, Ntest=%llu.\n",
+        printf("Generating Pareto ditribution. Tbase=%lu, alpha=%.4f, Ntest=%lu.\n",
             tbase, v1, NTEST);
 #else
         printf("Reading vkern walk list from walk.csv.\n");
@@ -278,7 +304,6 @@ main(int argc, char **argv) {
     } else {
         c = atoi(argv[1]);
     }
-    d = 0;
     // Warm up
     do {
         if (myrank == 0) {
@@ -303,12 +328,14 @@ main(int argc, char **argv) {
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
+    ns1 = 0;
+    ns0 = 0;
     MPI_Barrier(MPI_COMM_WORLD);
     for (int iwalk = 0; iwalk < ntest; iwalk ++) {
         register uint64_t n = p_len[iwalk] * 2;
         register uint64_t npre = NPRECALC;
         register uint64_t ra, rb, rc;
-        struct timespec tv;
+        // struct timespec tv;
 
         // Flushing
         if (npf) {
@@ -333,6 +360,9 @@ main(int argc, char **argv) {
 
 #elif USE_WTIME
         ns0 = (uint64_t)(MPI_Wtime() * 1e9);
+#elif USE_LIKWID
+        ns0 = ns1;
+        LIKWID_MARKER_START("vkern"); 
 #else
         _read_ns (ns0);
         _mfence;
@@ -351,42 +381,69 @@ main(int argc, char **argv) {
         ns1 = tv.tv_sec * 1e9 + tv.tv_nsec;
 #elif USE_WTIME
         ns1 = (uint64_t)(MPI_Wtime() * 1e9);
+#elif USE_LIKWID
+        LIKWID_MARKER_STOP("vkern"); 
+        LIKWID_MARKER_GET("vkern", &nev, (double*)ev_vals_1, &time, &count);
+        for (int iev = 0; iev < nev; iev ++) {
+            p_ev[iwalk * nev + iev] = (int64_t)ev_vals_1[iev] - (int64_t)ev_vals_0[iev];
+            ev_vals_0[iev] = ev_vals_1[iev];
+        }
+        ns1 = (uint64_t)(1e9*time);
 #else
         _read_ns (ns1);
         _mfence;
 #endif
         p_ns[iwalk] = ns1 - ns0;
+        
         a += ra;
         MPI_Barrier(MPI_COMM_WORLD);
     }
 
 #ifdef USE_PAPI
     PAPI_shutdown();
-#endif
 
-    MPI_Barrier(MPI_COMM_WORLD);
-    uint64_t *p_cy_all, *p_ns_all;
-    p_ns_all = (uint64_t *)malloc(nrank*ntest*sizeof(uint64_t));
-    MPI_Gather(p_ns, ntest, MPI_UINT64_T, p_ns_all, ntest, MPI_UINT64_T, 0, MPI_COMM_WORLD);
-    if (myrank == 0) {
-#ifdef USE_PAPI
-        FILE *fp = fopen("papi_time.csv", "w");
-#elif USE_CGT
-        FILE *fp = fopen("cgt_time.csv", "w");
-#elif USE_WTIME
-        FILE *fp = fopen("wtime_time.csv", "w");
-#else
-        FILE *fp = fopen("stiming_time.csv", "w");
+#elif USE_LIKWID
+    // Finalize LIKWID
+    LIKWID_MARKER_CLOSE;    
 #endif
-        for (int irank = 0; irank < nrank; irank ++) {
-            for (int iwalk = NPASS; iwalk < ntest; iwalk ++) {
-                int iall = irank * ntest + iwalk;
-                fprintf(fp, "%d,%llu,%llu\n", irank, p_len[iwalk], p_ns_all[iall]);
-            }
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    // Each rank writes its own file.
+    char fname[4096], myhost[1024];
+    gethostname(myhost, 1024);
+#ifdef USE_PAPI
+    sprintf(fname, "papi_time_%d_%s.csv", myrank, myhost);
+    FILE *fp = fopen(fname, "w");
+#elif USE_CGT
+    sprintf(fname, "cgt_time_%d_%s.csv", myrank, myhost);
+    FILE *fp = fopen(fname, "w");
+#elif USE_WTIME
+    sprintf(fname, "wtime_time_%d_%s.csv", myrank, myhost);
+    FILE *fp = fopen(fname, "w");
+#elif USE_PAPIX
+    sprintf(fname, "papix_time_%d_%s.csv", myrank, myhost);
+    FILE *fp = fopen(fname, "w");
+#elif USE_LIKWID
+    sprintf(fname, "likwid_time_%d_%s.csv", myrank, myhost);
+    FILE *fp = fopen(fname, "w");
+#else
+    sprintf(fname, "stiming_time_%d_%s.csv", myrank, myhost);
+    FILE *fp = fopen(fname, "w");
+#endif
+    for (int iwalk = NPASS; iwalk < ntest; iwalk ++) {
+        fprintf(fp, "%d,%lu,%lu", myrank, p_len[iwalk], p_ns[iwalk]);
+#if defined(USE_LIKWID) || defined(USE_PAPIX)
+        for (int iev = 0; iev < nev; iev ++) {
+            fprintf(fp, ",%ld", p_ev[iwalk*nev+iev]);
         }
-        fclose(fp);
+#endif
+        fprintf(fp, "\n");
     }
-    free(p_ns_all);
+    fclose(fp);
+    MPI_Barrier(MPI_COMM_WORLD);
+#if defined(USE_LIKWID) || defined(USE_PAPIX)
+    free(p_ev);
+#endif
 
     MPI_Finalize();
 
