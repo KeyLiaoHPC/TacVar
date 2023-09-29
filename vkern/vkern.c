@@ -10,7 +10,7 @@
 #include <gsl/gsl_rng.h>
 #include "mpi.h"
 
-#if defined(USE_PAPI) || defined(USE_PAPIX)
+#if defined(USE_PAPI) || defined(USE_PAPIX6)
 #include "papi.h"
 
 #elif defined(USE_LIKWID)
@@ -235,6 +235,27 @@ main(int argc, char **argv) {
     PAPI_library_init(PAPI_VER_CURRENT);
     PAPI_create_eventset(&eventset);
     PAPI_start(eventset);
+    
+#elif USE_PAPIX6
+    // Init PAPI
+    int eventset = PAPI_NULL;
+    int nev = 6;
+    long long int ev_vals_0[6]={0}, ev_vals_1[6]={0};
+    int64_t *p_ev;
+    p_ev = (int64_t *)malloc(ntest * nev * sizeof(int64_t));
+    for (int iev = 0; iev < nev; iev ++) {
+        ev_vals_0[iev] = 0;
+        ev_vals_1[iev] = 0;
+    }
+    PAPI_library_init(PAPI_VER_CURRENT);
+    PAPI_create_eventset(&eventset);
+    PAPI_add_named_event(eventset, "cpu-cycles");
+    PAPI_add_named_event(eventset, "instructions");
+    PAPI_add_named_event(eventset, "cache-references");
+    PAPI_add_named_event(eventset, "cache-misses");
+    PAPI_add_named_event(eventset, "branches");
+    PAPI_add_named_event(eventset, "branch-misses");
+    PAPI_start(eventset);
 
 #elif USE_LIKWID
     // Init LIKWID
@@ -354,6 +375,10 @@ main(int argc, char **argv) {
 #ifdef USE_PAPI
         ns0 = PAPI_get_real_nsec();
 
+#elif USE_PAPIX6
+        ns0 = PAPI_get_real_nsec();
+        PAPI_read(eventset, ev_vals_0);
+
 #elif USE_CGT
         clock_gettime(CLOCK_MONOTONIC, &tv);
         ns0 = tv.tv_sec * 1e9 + tv.tv_nsec;
@@ -375,6 +400,13 @@ main(int argc, char **argv) {
         }
 #ifdef USE_PAPI
         ns1 = PAPI_get_real_nsec();
+
+#elif USE_PAPIX6
+        ns1 = PAPI_get_real_nsec();
+        PAPI_read(eventset, ev_vals_1);
+        for (int iev = 0; iev < nev; iev ++) {
+            p_ev[iwalk * nev + iev] = (int64_t)(ev_vals_1[iev] - ev_vals_0[iev]);
+        }
 
 #elif USE_CGT
         clock_gettime(CLOCK_MONOTONIC, &tv);
@@ -402,6 +434,9 @@ main(int argc, char **argv) {
 #ifdef USE_PAPI
     PAPI_shutdown();
 
+#elif USE_PAPIX6
+    PAPI_shutdown();
+
 #elif USE_LIKWID
     // Finalize LIKWID
     LIKWID_MARKER_CLOSE;    
@@ -420,7 +455,7 @@ main(int argc, char **argv) {
 #elif USE_WTIME
     sprintf(fname, "wtime_time_%d_%s.csv", myrank, myhost);
     FILE *fp = fopen(fname, "w");
-#elif USE_PAPIX
+#elif USE_PAPIX6
     sprintf(fname, "papix_time_%d_%s.csv", myrank, myhost);
     FILE *fp = fopen(fname, "w");
 #elif USE_LIKWID
@@ -432,7 +467,7 @@ main(int argc, char **argv) {
 #endif
     for (int iwalk = NPASS; iwalk < ntest; iwalk ++) {
         fprintf(fp, "%d,%lu,%lu", myrank, p_len[iwalk], p_ns[iwalk]);
-#if defined(USE_LIKWID) || defined(USE_PAPIX)
+#if defined(USE_LIKWID) || defined(USE_PAPIX6)
         for (int iev = 0; iev < nev; iev ++) {
             fprintf(fp, ",%ld", p_ev[iwalk*nev+iev]);
         }
@@ -441,7 +476,7 @@ main(int argc, char **argv) {
     }
     fclose(fp);
     MPI_Barrier(MPI_COMM_WORLD);
-#if defined(USE_LIKWID) || defined(USE_PAPIX)
+#if defined(USE_LIKWID) || defined(USE_PAPIX6)
     free(p_ev);
 #endif
 
