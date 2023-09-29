@@ -203,7 +203,8 @@ main(int argc, char **argv) {
     uint64_t register ns0, ns1;
     uint64_t tbase=TBASE, fsize = FSIZE, npf = 0; // npf: flush arr length
     double *pf_a, *pf_b, *pf_c;
-    int myrank, nrank, errid;
+    int myrank = 0, nrank = 1, errid = 0;
+
 #ifdef UNIFORM
     uint64_t v1 = V1, v2 = V2;
 
@@ -411,8 +412,10 @@ main(int argc, char **argv) {
 #elif USE_CGT
         clock_gettime(CLOCK_MONOTONIC, &tv);
         ns1 = tv.tv_sec * 1e9 + tv.tv_nsec;
+
 #elif USE_WTIME
         ns1 = (uint64_t)(MPI_Wtime() * 1e9);
+
 #elif USE_LIKWID
         LIKWID_MARKER_STOP("vkern"); 
         LIKWID_MARKER_GET("vkern", &nev, (double*)ev_vals_1, &time, &count);
@@ -456,7 +459,7 @@ main(int argc, char **argv) {
     sprintf(fname, "wtime_time_%d_%s.csv", myrank, myhost);
     FILE *fp = fopen(fname, "w");
 #elif USE_PAPIX6
-    sprintf(fname, "papix_time_%d_%s.csv", myrank, myhost);
+    sprintf(fname, "papix6_time_%d_%s.csv", myrank, myhost);
     FILE *fp = fopen(fname, "w");
 #elif USE_LIKWID
     sprintf(fname, "likwid_time_%d_%s.csv", myrank, myhost);
@@ -479,6 +482,10 @@ main(int argc, char **argv) {
 #if defined(USE_LIKWID) || defined(USE_PAPIX6)
     free(p_ev);
 #endif
+
+    if (myrank == 0) {
+        printf("Done. %lu\n", a);
+    }
 
     MPI_Finalize();
 
