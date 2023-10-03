@@ -202,7 +202,7 @@ gen_walklist(uint64_t *len_list) {
 int
 main(int argc, char **argv) {
     int ntest;
-    register uint64_t a, b, c;
+    register uint64_t a, b;
     uint64_t *p_len, *p_ns;
     uint64_t register ns0, ns1;
     uint64_t tbase=TBASE, fsize = FSIZE, npf = 0; // npf: flush arr length
@@ -324,11 +324,10 @@ main(int argc, char **argv) {
 
 
     a = 0;
-    b = 0;
     if (argc < 10) {
-        c = 1;
+        b = 1;
     } else {
-        c = atoi(argv[1]);
+        b = atoi(argv[1]);
     }
     // Warm up
     do {
@@ -344,7 +343,6 @@ main(int argc, char **argv) {
 
         while (tv.tv_sec * 1e9 + tv.tv_nsec < nsec) {
             a = b + 1;
-            b = a + 1;
             clock_gettime(CLOCK_MONOTONIC, &tv);
         }
     } while (0);
@@ -358,7 +356,7 @@ main(int argc, char **argv) {
     ns0 = 0;
     MPI_Barrier(MPI_COMM_WORLD);
     for (int iwalk = 0; iwalk < ntest; iwalk ++) {
-        register uint64_t n = p_len[iwalk] * 2;
+        register uint64_t n = p_len[iwalk];
         register uint64_t npre = NPRECALC;
         register uint64_t ra, rb, rc;
         // struct timespec tv;
@@ -369,20 +367,18 @@ main(int argc, char **argv) {
         }
 
         // Instruction preload.
-        ra = n + npre * 2;
-        rc = c;
+        ra = n + npre;
+        rb = b;
         while (ra != n) {
-            rb = ra - rc;
-            ra = rb - rc;
+            ra = ra - rb;
         }
 
         // Timing.
         while (ra!= 0) {
-            rb = ra - rc;
-            ra = rb - rc;
+            ra = ra - rb;
         }
 
-        ra = NSAMP * 2;
+        ra = NSAMP;
 #ifdef USE_PAPI
         ns0 = PAPI_get_real_nsec();
 
@@ -406,8 +402,7 @@ main(int argc, char **argv) {
 #endif
 
         while (ra!= 0) {
-            rb = ra - rc;
-            ra = rb - rc;
+            ra = ra - rb;
         }
 #ifdef USE_PAPI
         ns1 = PAPI_get_real_nsec();
