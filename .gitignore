@@ -43,6 +43,7 @@
 *.pdb
 *.x
 *.o
+*.swp
 
 # Kernel Module Compile Results
 *.mod*

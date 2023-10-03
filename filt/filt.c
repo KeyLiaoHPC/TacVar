@@ -161,7 +161,7 @@ sim_verify(prob_hist_t *tmh, prob_hist_t *trh, i64 *tf_arr, u64 tf_len, i64 *sim
     trpmax = ptrhc[nbin-1];
     
     for (u64 isamp = 0; isamp < nsamp; isamp ++){
-        // mul trpmax to scaling for the little error from trpmax to 1.0
+        // mul trpmax instead of 1, to tackle the little error from trpmax to 1.0
         register double px = (double)rand() / (double)RAND_MAX * trpmax;
         register i64 tf = tf_arr[(u64)((double)rand() / (double)RAND_MAX * (double)tf_len)];
         for (u64 ir = 0; ir < nbin - 1; ir ++) {
@@ -227,7 +227,7 @@ calc_tr(prob_hist_t *tmh, prob_hist_t *trh, i64 *tf_arr, u64 tf_len, filt_param_
 
         // ====== S1: Initial condition ======
         p = tmh->pbin[imb].p - simh[imb];
-        if (fabs(p) <= dp_min) {
+        if (p < dp_min) {
             trh->pbin[imb].p = 0;
             imb += 1;
             continue;
@@ -391,8 +391,24 @@ slice(i64 *arr, u64 len, double p_low, i64 width, prob_hist_t *phist){
     return err;
 }
 
+void
+calc_w(i64 *tm_arr, u64 tm_len, i64 *sim_cdf, i64 *w_arr, double *wp_arr) {
+    double w = 0;
+    for (size_t i = 0; i < NTILE; i ++) {
+        size_t itm = (size_t)((double)i / (double)NTILE * tm_len);
+        w_arr[i] = sim_cdf[i] - tm_arr[itm];
+        wp_arr[i] = (double)w_arr[i] / tm_arr[itm];
+        w += abs(w_arr[i]);
+    }
+    w = w / (double)NTILE;
+
+    printf(" W-Distance=%f  ", w);
+
+    return;
+}
+
 int
-read_csv(char *fpath, double pcut, u64 *len, i64 **arr){
+read_csv(char *fpath, double pcut, u64 *len, i64 **arr) {
     FILE *fp;
     i64 fsize;
     i64 nrow;
@@ -465,7 +481,8 @@ read_csv(char *fpath, double pcut, u64 *len, i64 **arr){
 }
 
 int
-run_filt(filt_param_t *args, prob_hist_t *tr_hist, i64 *sim_cdf){
+run_filt(filt_param_t *args, prob_hist_t *tr_hist, i64 *sim_cdf, 
+            i64 *w_arr, double *wp_arr){
     u64 tm_len, tf_len;
     i64 *tm_arr, *tf_arr;
     prob_hist_t tm_hist;
@@ -486,6 +503,12 @@ run_filt(filt_param_t *args, prob_hist_t *tr_hist, i64 *sim_cdf){
         printf("[FilT-run_filt] Error in slicing met array. ERRCODE %d\n", err);
         return err;
     }
+    // Print measured hist for debugging.
+    printf("[FilT-run_filt] Histogram of measured run times:\ntime\t\tp\n");
+    for (size_t i = 0; i < tm_hist.nbin - 1; i ++) {
+        printf("[%ld, %ld)\t%.7f\n", 
+                tm_hist.pbin[i].t, tm_hist.pbin[i+1].t, tm_hist.pbin[i].p);
+    }
 
     printf("[FilT-run_filt] Parsing timing fluctuation file %s\n", args->in_tf_file);
     err = read_csv(args->in_tf_file, args->p_ycut, &tf_len, &tf_arr);
@@ -503,6 +526,7 @@ run_filt(filt_param_t *args, prob_hist_t *tr_hist, i64 *sim_cdf){
 
     printf("[FilT-run_filt] Verifying the estimation...");
     sim_verify(&tm_hist, tr_hist, tf_arr, tf_len, sim_cdf, args->nsamp);
+    calc_w(tm_arr, tm_len, sim_cdf, w_arr, wp_arr);
     printf("Done.\n");
 
     free(tm_arr);
@@ -525,7 +549,8 @@ main(int argc, char **argv){
     filt_param_t args;
     prob_hist_t tr_hist;
     int err;
-    i64 sim_cdf[NTILE+1];
+    i64 sim_cdf[NTILE+1], w_arr[NTILE+1];
+    double wp_arr[NTILE+1];
     
     args.in_tm_file = "met.csv";
     args.in_tf_file = "tf.csv";
@@ -547,7 +572,7 @@ main(int argc, char **argv){
             args.p_low, args.width, args.nsamp, args.p_xcut, args.p_ycut);
 
     // Reading input files and estimating the real run time distribution.
-    err = run_filt(&args, &tr_hist, sim_cdf);
+    err = run_filt(&args, &tr_hist, sim_cdf, w_arr, wp_arr);
 
     if (err == 0) {
         printf("[FilT-main] Writing results to %s...", args.out_trh_file);
@@ -561,7 +586,7 @@ main(int argc, char **argv){
         printf("[FilT-main] Writing verification simulation results to %s...", args.out_sim_file);
         fp = fopen(args.out_sim_file, "w");
         for (int i = 0; i < NTILE+1; i ++) {
-            fprintf(fp, "%d, %lld\n", i, sim_cdf[i]);
+            fprintf(fp, "%d, %ld, %ld, %lf\n", i, sim_cdf[i], w_arr[i], wp_arr[i]);
         }
         fclose(fp);
         printf("Done.\n");

@@ -74,7 +74,7 @@ int read_csv(char *fpath, double pcut, u64 *len, i64 **arr);
  * @param tr_hist Pointer to the histogram of filtered running times.
  * @param sim_cdf The 1000-tile cdf of the verification simulation 
  */
-int run_filt(filt_param_t *args, prob_hist_t *tr_hist, i64 *sim_cdf);
+int run_filt(filt_param_t *args, prob_hist_t *tr_hist, i64 *sim_cdf, i64 *w_arr, double *wp_arr);
 
 /**
  * Comparing function for qsort.
@@ -92,6 +92,8 @@ int cmp(const void *a, const void *b);
  * @return int 
  */
 int calc_tr(prob_hist_t *tmh, prob_hist_t *trh, i64 *tf_arr, u64 tf_len, filt_param_t *args);
+
+void calc_w(i64 *tm_arr, u64 tm_len, i64 *sim_cdf, i64 *w_arr, double *wp_arr);
 
 /**
  * @brief 
