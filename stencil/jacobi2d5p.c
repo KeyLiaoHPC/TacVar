@@ -68,7 +68,37 @@
 
 #define _mfence asm volatile("lfence"   "\n\t":::);
 
+
 #define NS_PER_TICK  1
+
+void
+tsc_start(uint64_t *cycle) {
+    unsigned ch, cl;
+
+    asm volatile (  "CPUID" "\n\t"
+                    "RDTSC" "\n\t"
+                    "mov %%edx, %0" "\n\t"
+                    "mov %%eax, %1" "\n\t"
+                    : "=r" (ch), "=r" (cl)
+                    :
+                    : "%rax", "%rbx", "%rcx", "%rdx");
+    *cycle = ( ((uint64_t)ch << 32) | cl );
+}
+
+void
+tsc_stop(uint64_t *cycle) {
+    unsigned ch, cl;
+
+    asm volatile (  "RDTSCP" "\n\t"
+                    "mov %%edx, %0" "\n\t"
+                    "mov %%eax, %1" "\n\t"
+                    "CPUID" "\n\t"
+                    : "=r" (ch), "=r" (cl)
+                    :
+                    : "%rax", "%rbx", "%rcx", "%rdx");
+
+    *cycle = ( ((uint64_t)ch << 32) | cl );
+}
 
 
 /**
@@ -261,9 +291,14 @@ main(int argc, char **argv) {
 
 #elif USE_WTIME
             ns0 = (uint64_t)(MPI_Wtime() * 1e9);
+
 #elif USE_LIKWID
             ns0 = 0;
             LIKWID_MARKER_START("vkern"); 
+
+#elif USE_TSC
+            tsc_start(&ns0);
+
 #else
             _read_ns (ns0);
             _mfence;
@@ -308,6 +343,12 @@ main(int argc, char **argv) {
             // unexpectedly. It is good to use FIXC2: CPU_CLK_UNHALTED_REF and convert with tsc_ns
             ns1 = (uint64_t)((double)p_ev[it * narr * nev + j * nev + 2] / tsc_ns);
             p_ns[it*narr+j] = ns1;
+
+#elif USE_TSC
+            tsc_stop(&ns1);
+            p_ns[it*narr+j] = ns1 - ns0;
+            p_ns[it*narr+j] = (uint64_t)((double)(ns1 - ns0) / tsc_ns);
+
 #else
             _read_ns (ns1);
             _mfence;
@@ -350,6 +391,9 @@ main(int argc, char **argv) {
     FILE *fp = fopen(fname, "w");
 #elif USE_LIKWID
     sprintf(fname, "jacobi2d5p_likwid_time_%d_%s.csv", myrank, myhost);
+    FILE *fp = fopen(fname, "w");
+#elif USE_TSC
+    sprintf(fname, "jacobi2d5p_tsc_time_%d_%s.csv", myrank, myhost);
     FILE *fp = fopen(fname, "w");
 #else
     sprintf(fname, "jacobi2d5p_stiming_time_%d_%s.csv", myrank, myhost);
