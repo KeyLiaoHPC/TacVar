@@ -187,7 +187,7 @@ main(int argc, char **argv) {
 
     
     if (myrank == 0) {
-        printf("A 2D 5-point Jacobi stencil scheme.\nNTEST=%lu, NPASS=%u, NARR=%lu \n", 
+        printf("A cg_calc_w kernel from TeaLeaf f90 ref code.\nNTEST=%lu, NPASS=%u, NARR=%lu \n", 
                 ntest, NPASS, narr);
     }
 

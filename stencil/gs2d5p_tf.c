@@ -179,7 +179,6 @@ main(int argc, char **argv) {
     do {
         for (uint64_t i = 0; i < narr; i ++) {
             fill_random(x[i], narr);
-            fill_random(y[i], narr);
         }
         if (myrank == 0) {
             printf("Warming up for %d ms.\n", NWARM);
@@ -429,7 +428,7 @@ main(int argc, char **argv) {
 #endif
 
     if (myrank == 0) {
-        printf("Done. %f\n", y[narr/2][narr/2]);
+        printf("Done. %f\n", x[narr/2][narr/2]);
     }
 
     for (size_t i = 0; i < narr; i ++) {
