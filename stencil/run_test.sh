@@ -1,33 +1,34 @@
 #!/bin/bash -x
 
-narr=400
+narr=512
 nt=100
-tsc=2.593906
-np=64
-host=node923
+tsc=2.494102
+np=40
+host=cas114
+kernel=tl_f90_cg_calc_w
 
-mpicc -O2 -Wall -o jacobi2d5p_tsc_tf.x ./jacobi2d5p_tf.c  -DTIMING -DUSE_TSC -DNTEST=$nt -DNPASS=1 -lgsl -lopenblas
-mpicc -O2 -Wall -o jacobi2d5p_cgt_tf.x ./jacobi2d5p_tf.c  -DTIMING -DUSE_CGT -DNTEST=$nt -DNPASS=1 -lgsl -lopenblas
-mpicc -O2 -Wall -o jacobi2d5p_papi_tf.x ./jacobi2d5p_tf.c  -DTIMING -DUSE_PAPI -DNTEST=$nt -DNPASS=1 -lgsl -lopenblas -lpapi                               
-mpicc -O2 -Wall -o jacobi2d5p_papix6_tf.x ./jacobi2d5p_tf.c  -DTIMING -DUSE_PAPIX6 -DNTEST=$nt -DNPASS=1 -lgsl -lopenblas -lpapi                           
-mpicc -O2 -Wall -o jacobi2d5p_likwid_tf.x ./jacobi2d5p_tf.c  -DTIMING -DUSE_LIKWID -DLIKWID_PERFMON -DNTEST=$nt -DNPASS=1 -lgsl -lopenblas -llikwid
+#mpicc -O2 -Wall -o ${kernel}_tsc_tf.x ./${kernel}_tf.c  -DTIMING -DUSE_TSC -DNTEST=$nt -DNPASS=1 -lgsl -lopenblas
+#mpicc -O2 -Wall -o ${kernel}_cgt_tf.x ./${kernel}_tf.c  -DTIMING -DUSE_CGT -DNTEST=$nt -DNPASS=1 -lgsl -lopenblas
+#mpicc -O2 -Wall -o ${kernel}_papi_tf.x ./${kernel}_tf.c  -DTIMING -DUSE_PAPI -DNTEST=$nt -DNPASS=1 -lgsl -lopenblas -lpapi                               
+#mpicc -O2 -Wall -o ${kernel}_papix6_tf.x ./${kernel}_tf.c  -DTIMING -DUSE_PAPIX6 -DNTEST=$nt -DNPASS=1 -lgsl -lopenblas -lpapi                           
+#mpicc -O2 -Wall -o ${kernel}_likwid_tf.x ./${kernel}_tf.c  -DTIMING -DUSE_LIKWID -DLIKWID_PERFMON -DNTEST=$nt -DNPASS=1 -lgsl -lopenblas -llikwid
 
-mpicc -O2 -Wall -o jacobi2d5p_tsc.x ./jacobi2d5p.c  -DTIMING -DUSE_TSC -DNTEST=$nt -DNPASS=1 -lgsl -lopenblas
-mpicc -O2 -Wall -o jacobi2d5p_cgt.x ./jacobi2d5p.c  -DTIMING -DUSE_CGT -DNTEST=$nt -DNPASS=1 -lgsl -lopenblas
-mpicc -O2 -Wall -o jacobi2d5p_papi.x ./jacobi2d5p.c  -DTIMING -DUSE_PAPI -DNTEST=$nt -DNPASS=1 -lgsl -lopenblas -lpapi
-mpicc -O2 -Wall -o jacobi2d5p_papix6.x ./jacobi2d5p.c  -DTIMING -DUSE_PAPIX6 -DNTEST=$nt -DNPASS=1 -lgsl -lopenblas -lpapi                        
-mpicc -O2 -Wall -o jacobi2d5p_likwid.x ./jacobi2d5p.c  -DTIMING -DUSE_LIKWID -DLIKWID_PERFMON -DNTEST=$nt -DNPASS=1 -lgsl -lopenblas -llikwid  
+mpicc -O2 -Wall -o ${kernel}_tsc.x ./${kernel}.c  -DTIMING -DUSE_TSC -DNTEST=$nt -DNPASS=1 -lgsl -lopenblas
+mpicc -O2 -Wall -o ${kernel}_cgt.x ./${kernel}.c  -DTIMING -DUSE_CGT -DNTEST=$nt -DNPASS=1 -lgsl -lopenblas
+mpicc -O2 -Wall -o ${kernel}_papi.x ./${kernel}.c  -DTIMING -DUSE_PAPI -DNTEST=$nt -DNPASS=1 -lgsl -lopenblas -lpapi
+mpicc -O2 -Wall -o ${kernel}_papix6.x ./${kernel}.c  -DTIMING -DUSE_PAPIX6 -DNTEST=$nt -DNPASS=1 -lgsl -lopenblas -lpapi                        
+mpicc -O2 -Wall -o ${kernel}_likwid.x ./${kernel}.c  -DTIMING -DUSE_LIKWID -DLIKWID_PERFMON -DNTEST=$nt -DNPASS=1 -lgsl -lopenblas -llikwid  
 
-for m in cgt papi papix6
+for m in tsc cgt papi papix6
 do
-    mpirun --map-by core --bind-to core -np ${np} ./jacobi2d5p_${m}.x $narr $tsc
-    rm  -r jacobi2d5p${narr}n${nt}t_${m}_${host}
-    mkdir jacobi2d5p${narr}n${nt}t_${m}_${host}
-    mv ./*.csv jacobi2d5p${narr}n${nt}t_${m}_${host}
+    mpirun --map-by core --bind-to core -np ${np} ./${kernel}_${m}.x $narr $tsc
+    rm  -r ${kernel}${narr}n${nt}t_${m}_${host}
+    mkdir ${kernel}${narr}n${nt}t_${m}_${host}
+    mv ./*.csv ${kernel}${narr}n${nt}t_${m}_${host}
 done
 
-likwid-mpirun -np ${np} -g L3 -m ./jacobi2d5p_likwid.x $narr $tsc
-rm  -r jacobi2d5p${narr}n${nt}t_likwid_${host}
-mkdir jacobi2d5p${narr}n${nt}t_likwid_${host}
-mv ./*.csv jacobi2d5p${narr}n${nt}t_likwid_${host}
+likwid-mpirun -np ${np} -g L3 -m ./${kernel}_likwid.x $narr $tsc
+rm  -r ${kernel}${narr}n${nt}t_likwid_${host}
+mkdir ${kernel}${narr}n${nt}t_likwid_${host}
+mv ./*.csv ${kernel}${narr}n${nt}t_likwid_${host}
 
