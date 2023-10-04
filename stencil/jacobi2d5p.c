@@ -125,7 +125,7 @@ main(int argc, char **argv) {
     uint64_t ntest;
     /* Vars for Stencil */
     double **x, **y;
-    double a = 0.9999, b = 0.9999;
+    double a = 0.21, b = 0.20;
     uint64_t narr;
     struct timespec tv;
     uint64_t volatile nsec_st, nsec_en; // For warmup
@@ -198,7 +198,7 @@ main(int argc, char **argv) {
 
 
 #ifdef TIMING
-    uint64_t *p_ns, ns0, ns1;
+    uint64_t *p_ns, ns0 = 0, ns1 = 0;
 
 #ifdef USE_PAPI
     // Init PAPI
@@ -255,8 +255,8 @@ main(int argc, char **argv) {
 #endif
 
     for (uint64_t i = 0; i < narr; i ++) {
-            fill_random(x[i], narr);
-            fill_random(y[i], narr);
+        fill_random(x[i], narr);
+        fill_random(y[i], narr);
     }
 
     if (myrank == 0) {
@@ -293,7 +293,7 @@ main(int argc, char **argv) {
             ns0 = (uint64_t)(MPI_Wtime() * 1e9);
 
 #elif USE_LIKWID
-            ns0 = 0;
+            //ns0 = 0;
             LIKWID_MARKER_START("vkern"); 
 
 #elif USE_TSC
@@ -341,8 +341,10 @@ main(int argc, char **argv) {
             }
             // We do not use "time" argument as the timestamp because the perfmon swith the timer
             // unexpectedly. It is good to use FIXC2: CPU_CLK_UNHALTED_REF and convert with tsc_ns
-            ns1 = (uint64_t)((double)p_ev[it * narr * nev + j * nev + 2] / tsc_ns);
-            p_ns[it*narr+j] = ns1;
+            // ns1 = (uint64_t)((double)p_ev[it * narr * nev + j * nev + 2] / tsc_ns);
+            ns1 = (uint64_t) (time * 1e9);
+            p_ns[it*narr+j] = ns1 - ns0;
+            ns0 = ns1;
 
 #elif USE_TSC
             tsc_stop(&ns1);
@@ -424,8 +426,19 @@ main(int argc, char **argv) {
 #endif
 
     if (myrank == 0) {
-        printf("Done. %f\n", y[myrank][myrank]);
+        printf("Done. %f\n", y[narr/2][narr/2]);
     }
+
+    for (size_t i = 0; i < narr; i ++) {
+        free(x[i]);
+    }
+    for (size_t i = 0; i < narr; i ++) {
+        free(y[i]);
+    }
+
+    free(x);
+    free(y);
+
 
     MPI_Barrier(MPI_COMM_WORLD);
 
