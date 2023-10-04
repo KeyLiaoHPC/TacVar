@@ -68,6 +68,7 @@
 
 #define _mfence asm volatile("lfence"   "\n\t":::);
 
+
 #define NS_PER_TICK  1
 
 void
@@ -123,16 +124,13 @@ int
 main(int argc, char **argv) {
     uint64_t ntest;
     /* Vars for Stencil */
-    double **x, **y;
-    double a = 0.21, b = 0.2;
+    double **x;
+    double a = 0.251;
     uint64_t narr;
     struct timespec tv;
     uint64_t volatile nsec_st, nsec_en; // For warmup
     int myrank, nrank, errid;
     double tsc_ns;
-
-    uint64_t volatile c, nsamp;
-
 
     if (argc >= 2) {
         narr = (uint64_t)atoll(argv[1]);
@@ -141,26 +139,14 @@ main(int argc, char **argv) {
     }
 
     if (argc >= 3) {
-        nsamp = (uint64_t)atoll(argv[2]);
-        c = 1;
-    } else {
-        printf("NSAMP IS MISSING\n");
-        return -1;
-    }
-
-    if (argc >= 4) {
-        tsc_ns = atof(argv[3]);
+        tsc_ns = atof(argv[2]);
     } else {
         tsc_ns = 1.0;
     }
 
     x = (double **)malloc(narr * sizeof(double*));
-    y = (double **)malloc(narr * sizeof(double*));
     for (size_t i = 0; i < narr; i ++) {
         x[i] = (double *)malloc(narr * sizeof(double));
-    }
-    for (size_t i = 0; i < narr; i ++) {
-        y[i] = (double *)malloc(narr * sizeof(double));
     }
 
     ntest = NPASS + NTEST;
@@ -175,7 +161,7 @@ main(int argc, char **argv) {
 
     
     if (myrank == 0) {
-        printf("A 2D 5-point Jacobi stencil scheme.\nNTEST=%lu, NPASS=%u, NARR=%lu \n", 
+        printf("A 2D 5-point Gauss-Seidel stencil scheme.\nNTEST=%lu, NPASS=%u, NARR=%lu \n", 
                 ntest, NPASS, narr);
     }
 
@@ -183,7 +169,6 @@ main(int argc, char **argv) {
     do {
         for (uint64_t i = 0; i < narr; i ++) {
             fill_random(x[i], narr);
-            fill_random(y[i], narr);
         }
         if (myrank == 0) {
             printf("Warming up for %d ms.\n", NWARM);
@@ -199,7 +184,7 @@ main(int argc, char **argv) {
             clock_gettime(CLOCK_MONOTONIC, &tv);
             for (uint64_t i = 1; i < narr-1; i ++) {
                 for (uint64_t j = 1; j < narr-1; j ++) {
-                    y[i][j] = a * x[i][j] + b * (x[i-1][j] + x[i+1][j] + x[i][j-1] + x[i][j+1]);
+                    x[i][j] = a * (x[i-1][j] + x[i+1][j] + x[i][j-1] + x[i][j+1]);
                 }
             }
         }
@@ -266,33 +251,18 @@ main(int argc, char **argv) {
 
     for (uint64_t i = 0; i < narr; i ++) {
         fill_random(x[i], narr);
-        fill_random(y[i], narr);
     }
 
     if (myrank == 0) {
         printf("Start running.\n");
         fflush(stdout);
     }
+
     MPI_Barrier(MPI_COMM_WORLD);
     clock_gettime(CLOCK_MONOTONIC, &tv);
     nsec_st = tv.tv_sec * 1e9 + tv.tv_nsec;
-
     for (int it = 0; it < ntest; it ++) {
-        
-        for (uint64_t i = 0; i < narr; i ++) {
-            for (uint64_t j = 0; j < narr; j ++) {
-                x[i][j] = y[i][j];
-            }
-        }
-
         for (uint64_t j = 1; j < narr-1; j ++) {
-            for (uint64_t k = 1; k < narr-1; k ++) {
-                y[j][k] = a * x[j][k] + b * (x[j-1][k] + x[j+1][k] + x[j][k-1] + x[j][k+1]);
-            }
-            register uint64_t ra, rb;
-            ra = nsamp + 1;
-            rb = c;
-            ra = ra - rb;
 #ifdef TIMING
 
 // Timing.
@@ -309,7 +279,9 @@ main(int argc, char **argv) {
 
 #elif USE_WTIME
             ns0 = (uint64_t)(MPI_Wtime() * 1e9);
+
 #elif USE_LIKWID
+            //ns0 = 0;
             LIKWID_MARKER_START("vkern"); 
 
 #elif USE_TSC
@@ -322,14 +294,14 @@ main(int argc, char **argv) {
 #endif
 
 #endif
-            while (ra) {
-                ra = ra - rb;
+            for (uint64_t k = 1; k < narr-1; k ++) {
+                x[j][k] = a * (x[j-1][k] + x[j+1][k] + x[j][k-1] + x[j][k+1]);
             }
 #ifdef TIMING
 
 #ifdef USE_PAPI
             ns1 = PAPI_get_real_nsec();
-            p_ns[it*narr+j] = ns1 - ns0;
+            p_ns[it*narr+j] = (uint64_t)(ns1 - ns0);
 
 #elif USE_PAPIX6
             ns1 = PAPI_get_real_nsec();
@@ -337,7 +309,7 @@ main(int argc, char **argv) {
             for (int iev = 0; iev < nev; iev ++) {
                 p_ev[it * narr * nev + j * nev + iev] = (int64_t)(ev_vals_1[iev] - ev_vals_0[iev]);
             }
-            p_ns[it*narr+j] = ns1 - ns0;
+            p_ns[it*narr+j] = (uint64_t)(ns1 - ns0);
 
 #elif USE_CGT
             clock_gettime(CLOCK_MONOTONIC, &tv);
@@ -357,25 +329,26 @@ main(int argc, char **argv) {
             }
             // We do not use "time" argument as the timestamp because the perfmon swith the timer
             // unexpectedly. It is good to use FIXC2: CPU_CLK_UNHALTED_REF and convert with tsc_ns
-            // ns1 = (int64_t)((double)p_ev[it * narr * nev + j * nev + 2] / tsc_ns);
-            ns1 = (uint64_t)(time * 1e9);
+            // ns1 = (uint64_t)((double)p_ev[it * narr * nev + j * nev + 2] / tsc_ns);
+            ns1 = (uint64_t) (time * 1e9);
             p_ns[it*narr+j] = ns1 - ns0;
             ns0 = ns1;
 
 #elif USE_TSC
             tsc_stop(&ns1);
+            p_ns[it*narr+j] = ns1 - ns0;
             p_ns[it*narr+j] = (uint64_t)((double)(ns1 - ns0) / tsc_ns);
 
 #else
             _read_ns (ns1);
             _mfence;
-            p_ns[it*narr+j] = (int64_t)((double)(ns1 - ns0) / tsc_ns);
+            p_ns[it*narr+j] = (uint64_t)((double)(ns1 - ns0) / tsc_ns);
 #endif
 
 #endif
-
         }
     }
+
     clock_gettime(CLOCK_MONOTONIC, &tv);
     nsec_en = tv.tv_sec * 1e9 + tv.tv_nsec;
     printf("Rank %d run time: %lu ns\n", myrank, nsec_en - nsec_st);
@@ -395,31 +368,31 @@ main(int argc, char **argv) {
     char fname[4096], myhost[1024];
     gethostname(myhost, 1024);
 #ifdef USE_PAPI
-    sprintf(fname, "jacobi2d5p_papi_time_%d_%s.csv", myrank, myhost);
+    sprintf(fname, "gs2d5p_papi_time_%d_%s.csv", myrank, myhost);
     FILE *fp = fopen(fname, "w");
 #elif USE_CGT
-    sprintf(fname, "jacobi2d5p_cgt_time_%d_%s.csv", myrank, myhost);
+    sprintf(fname, "gs2d5p_cgt_time_%d_%s.csv", myrank, myhost);
     FILE *fp = fopen(fname, "w");
 #elif USE_WTIME
-    sprintf(fname, "jacobi2d5p_wtime_time_%d_%s.csv", myrank, myhost);
+    sprintf(fname, "gs2d5p_wtime_time_%d_%s.csv", myrank, myhost);
     FILE *fp = fopen(fname, "w");
 #elif USE_PAPIX6
-    sprintf(fname, "jacobi2d5p_papix6_time_%d_%s.csv", myrank, myhost);
+    sprintf(fname, "gs2d5p_papix6_time_%d_%s.csv", myrank, myhost);
     FILE *fp = fopen(fname, "w");
 #elif USE_LIKWID
-    sprintf(fname, "jacobi2d5p_likwid_time_%d_%s.csv", myrank, myhost);
+    sprintf(fname, "gs2d5p_likwid_time_%d_%s.csv", myrank, myhost);
     FILE *fp = fopen(fname, "w");
 #elif USE_TSC
-    sprintf(fname, "jacobi2d5p_tsc_time_%d_%s.csv", myrank, myhost);
+    sprintf(fname, "gs2d5p_tsc_time_%d_%s.csv", myrank, myhost);
     FILE *fp = fopen(fname, "w");
 #else
-    sprintf(fname, "jacobi2d5p_stiming_time_%d_%s.csv", myrank, myhost);
+    sprintf(fname, "gs2d5p_stiming_time_%d_%s.csv", myrank, myhost);
     FILE *fp = fopen(fname, "w");
 #endif
 
     for (int it = NPASS; it < ntest; it ++) {
         for (size_t j = 1; j < narr-1; j ++) {
-            fprintf(fp, "%d,%lu,%lu", myrank, nsamp, p_ns[it*narr+j]);
+            fprintf(fp, "%d,%lu", myrank, p_ns[it*narr+j]);
 
 #if defined(USE_LIKWID) || defined(USE_PAPIX6)
             for (int iev = 0; iev < nev; iev ++) {
@@ -441,18 +414,15 @@ main(int argc, char **argv) {
 #endif
 
     if (myrank == 0) {
-        printf("Done. %f\n", y[narr/2][narr/2]);
+        printf("Done. %f\n", x[narr/2][narr/2]);
     }
 
     for (size_t i = 0; i < narr; i ++) {
         free(x[i]);
     }
-    for (size_t i = 0; i < narr; i ++) {
-        free(y[i]);
-    }
 
     free(x);
-    free(y);
+
 
     MPI_Barrier(MPI_COMM_WORLD);
 
