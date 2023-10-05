@@ -13,11 +13,13 @@
 
 /*=== BEGIN: Global Variables ===*/
 
+static double er, ep;
+
 typedef struct FilT_Param_T {
     u64 width;
     u64 nsamp;              // Number of samples in a simulation, and the number of simulation for a bin
     double p_low;           // Lower threshold of probability ofa single bin
-    double p_xcut, p_ycut;  // Cut the highest fraction.
+    double p_xcut, p_ycut, p_zcut;  // Cut the highest fraction.
     char *in_tm_file;       // Input measurement results.
     char *in_tf_file;       // Input timing fluctuation samples.
     char *out_trh_file;      // Output real time estimation.
@@ -93,7 +95,7 @@ int cmp(const void *a, const void *b);
  */
 int calc_tr(prob_hist_t *tmh, prob_hist_t *trh, i64 *tf_arr, u64 tf_len, filt_param_t *args);
 
-void calc_w(i64 *tm_arr, u64 tm_len, i64 *sim_cdf, i64 *w_arr, double *wp_arr);
+void calc_w(i64 *tm_arr, u64 tm_len, i64 *sim_cdf, i64 *w_arr, double *wp_arr, double p_zcut);
 
 /**
  * @brief 

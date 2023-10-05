@@ -85,6 +85,34 @@
 
 #define _mfence asm volatile("lfence"   "\n\t":::);
 
+void
+tsc_start(uint64_t *cycle) {
+    unsigned ch, cl;
+
+    asm volatile (  "CPUID" "\n\t"
+                    "RDTSC" "\n\t"
+                    "mov %%edx, %0" "\n\t"
+                    "mov %%eax, %1" "\n\t"
+                    : "=r" (ch), "=r" (cl)
+                    :
+                    : "%rax", "%rbx", "%rcx", "%rdx");
+    *cycle = ( ((uint64_t)ch << 32) | cl );
+}
+
+void
+tsc_stop(uint64_t *cycle) {
+    unsigned ch, cl;
+
+    asm volatile (  "RDTSCP" "\n\t"
+                    "mov %%edx, %0" "\n\t"
+                    "mov %%eax, %1" "\n\t"
+                    "CPUID" "\n\t"
+                    : "=r" (ch), "=r" (cl)
+                    :
+                    : "%rax", "%rbx", "%rcx", "%rdx");
+
+    *cycle = ( ((uint64_t)ch << 32) | cl );
+}
 
 /**
  * @brief A desginated one-line computing kernel.
@@ -200,7 +228,7 @@ main(int argc, char **argv) {
     int ntest;
     register uint64_t a, b;
     uint64_t *p_len, *p_ns;
-    uint64_t register ns0, ns1;
+    uint64_t ns0, ns1;
     uint64_t tbase=TBASE, fsize = FSIZE, npf = 0; // npf: flush arr length
     double *pf_a, *pf_b, *pf_c;
     int myrank = 0, nrank = 1, errid = 0;
@@ -279,6 +307,9 @@ main(int argc, char **argv) {
         ev_vals_0[iev] = 0;
         ev_vals_1[iev] = 0;
     }
+
+#elif USE_TSC
+    double tsc_freq = atof(argv[1]);
 
 #endif
 
@@ -384,6 +415,8 @@ main(int argc, char **argv) {
 #elif USE_LIKWID
         ns0 = ns1;
         LIKWID_MARKER_START("vkern"); 
+#elif USE_TSC
+        tsc_start(&ns0);
 #else
         _read_ns (ns0);
         _mfence;
@@ -418,6 +451,10 @@ main(int argc, char **argv) {
             ev_vals_0[iev] = ev_vals_1[iev];
         }
         ns1 = (uint64_t)(1e9*time);
+#elif USE_TSC
+        tsc_stop(&ns1);
+        ns1 = (uint64_t)((double)(ns1 - ns0) / tsc_freq);
+        ns0 = 0;
 #else
         _read_ns (ns1);
         _mfence;
@@ -457,6 +494,9 @@ main(int argc, char **argv) {
     FILE *fp = fopen(fname, "w");
 #elif USE_LIKWID
     sprintf(fname, "likwid_time_%d_%s.csv", myrank, myhost);
+    FILE *fp = fopen(fname, "w");
+#elif USE_TSC
+    sprintf(fname, "tsc_time_%d_%s.csv", myrank, myhost);
     FILE *fp = fopen(fname, "w");
 #else
     sprintf(fname, "stiming_time_%d_%s.csv", myrank, myhost);

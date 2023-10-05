@@ -12,7 +12,9 @@
 #ifdef __linux__
 #include <error.h>
 #endif
+#ifdef __APPLE__
 #include <errno.h>
+#endif
 #include <math.h>
 #include <sys/time.h>
 #include "argp.h"
@@ -32,6 +34,7 @@ static struct argp_option options[] = {
     {"plow", 'l', "PROB", 0, "Lowest threshold of possibility of a data bin", 0},
     {"cut-x", 'x', "PROB", 0, "Cut the highest probability of met array", 0},
     {"cut-y", 'y', "PROB", 0, "Cut the highest probability of timing fluctuation array", 0},
+    {"cut-z", 'z', "PROB", 0, "Cut the highest probability in w-distance calculation", 0},
     {0}
 };
 
@@ -60,6 +63,9 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
             break;
         case 'y':
             args->p_ycut = atof(arg);
+            break;
+        case 'z':
+            args->p_zcut = atof(arg);
             break;
         default:
             return ARGP_ERR_UNKNOWN;
@@ -265,16 +271,25 @@ calc_tr(prob_hist_t *tmh, prob_hist_t *trh, i64 *tf_arr, u64 tf_len, filt_param_
                 break;
             }
         } while (fabs(dp0) > fabs(dp1));
-        trh->pbin[imb].p = tr_p;
         tot_p += tr_p;
-        printf("[FilT-calc_tr] p=%f, tot_p=%f\n", trh->pbin[imb].p, tot_p);
-        fflush(stdout);
-        imb ++;
         // exit condition
         if (tot_p >= 1.0) {
+            // If the last try is closer to 1, then using the last tr_p as the final bin.
+            if (fabs(tot_p - 1) > fabs(tot_p - tr_p - 1)) {
+                tot_p -= tr_p;
+                trh->pbin[imb].p = 0;
+            } else {
+                trh->pbin[imb].p = tr_p;
+            }
             break;
-        } 
+        } else {
+            trh->pbin[imb].p = tr_p;
+            printf("[FilT-calc_tr] p=%f, tot_p=%f\n", trh->pbin[imb].p, tot_p);
+            fflush(stdout);
+            imb ++;
+        }
 	}
+    ep = fabs(tot_p - 1);
     printf("[FilT-calc_tr] tot_p=%f, Normalizing probabilities...", tot_p);
     fflush(stdout);
     for (u64 i = 0; i < trh->nbin; i ++) {
@@ -392,17 +407,26 @@ slice(i64 *arr, u64 len, double p_low, i64 width, prob_hist_t *phist){
 }
 
 void
-calc_w(i64 *tm_arr, u64 tm_len, i64 *sim_cdf, i64 *w_arr, double *wp_arr) {
-    double w = 0;
+calc_w(i64 *tm_arr, u64 tm_len, i64 *sim_cdf, i64 *w_arr, double *wp_arr, double p_zcut) {
+    double w = 0, wm = 0;
+    int wtile = (int)((1 - p_zcut) * (double)NTILE);
     for (size_t i = 0; i < NTILE; i ++) {
         size_t itm = (size_t)((double)i / (double)NTILE * tm_len);
         w_arr[i] = sim_cdf[i] - tm_arr[itm];
         wp_arr[i] = (double)w_arr[i] / tm_arr[itm];
-        w += abs(w_arr[i]);
     }
-    w = w / (double)NTILE;
+    for (size_t i = 0; i < wtile; i ++) {
+        size_t itm = (size_t)((double)i / (double)NTILE * tm_len);
+        w += abs(w_arr[i]);
+        wm += tm_arr[itm];
+    }
+    w = w / (double)wtile;
+    wm = wm / (double)wtile;
+    er = w / wm;
 
     printf(" W-Distance=%f  ", w);
+    FILE *fp=fopen("wd.out", "w");
+    fprintf(fp, "%f", w);
 
     return;
 }
@@ -526,7 +550,7 @@ run_filt(filt_param_t *args, prob_hist_t *tr_hist, i64 *sim_cdf,
 
     printf("[FilT-run_filt] Verifying the estimation...");
     sim_verify(&tm_hist, tr_hist, tf_arr, tf_len, sim_cdf, args->nsamp);
-    calc_w(tm_arr, tm_len, sim_cdf, w_arr, wp_arr);
+    calc_w(tm_arr, tm_len, sim_cdf, w_arr, wp_arr, args->p_zcut);
     printf("Done.\n");
 
     free(tm_arr);
@@ -589,7 +613,13 @@ main(int argc, char **argv){
             fprintf(fp, "%d, %ld, %ld, %lf\n", i, sim_cdf[i], w_arr[i], wp_arr[i]);
         }
         fclose(fp);
-        printf("Done.\n");
+        fp = fopen("er.out", "w");
+        fprintf(fp, "%f", er);
+        fclose(fp);
+        fp = fopen("ep.out", "w");
+        fprintf(fp, "%f", ep);
+        fclose(fp);
+        printf("Done. er=%f, ep=%f\n", er, ep);
     } else {
         printf("[FilT-main] run_filt returned with errors. ERRCODE %d\n", err);
         return err;
