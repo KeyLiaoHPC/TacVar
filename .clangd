@@ -1,0 +1,4 @@
+CompileFlags:
+  Add:
+    - "--include-directory=/home/hpckey/01-App/openmpi-5.0.7/include"
+    - "--include-directory=src/include"
