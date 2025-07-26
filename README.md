@@ -1,4 +1,25 @@
-# FilTAndVKern
+# TacVar
+
+TacVar is a toolset for tackling variability in parallel running time measurement. It includes several tools to measure, quantify and filter unstable timing readings in multi-core processors and accelerators.
+
+Here is core tools in TacVar:
+- ParTES: Measuring the minimal 'measurable' running time of your server under different run-time environment.
+- Vkern: Obeserving the deviation and error of your performance measurement results caused by timing fluctuation.
+- Filter: Filtering a noisy running time distribution for better measurement accuracy.
+
+Related publications:
+
+Q. Liao and J. Lin, "TacVar: Tackling Variability in Short-Interval Timing Measurements on X86 Processors," 2024 IEEE 24th International Symposium on Cluster, Cloud and Internet Computing (CCGrid), Philadelphia, PA, USA, 2024, pp. 496-506, doi: 10.1109/CCGrid59990.2024.00062. (Best paper award)
+
+Q. Liao, S. Zuo, Y. Wang and J. Lin. Timing Method and Evaluation Metrics for CPU Performance Variation Detections [J]. Chinese Journal of Computers，2024，47：456-472, doi: 10.11897/SP.J.1016.2024.00456. ([Download Paper](http://cjc.ict.ac.cn/online/onlinepaper/lqc-2024229165011.pdf))
+
+LIAO Qiucheng, ZHOU Yang, LIN Xinhua. Metrics and Tools for Evaluating the Deviation in Parallel Timing[J]. Computer Science, 2025, 52(5): 41-49. doi: 10.11896/jsjkx.241200053 ([Download Paper](https://www.jsjkx.com/CN/article/openArticlePDF.jsp?id=23149))
+
+
+
+
+
+
 
 ## 1 Introduction
 
