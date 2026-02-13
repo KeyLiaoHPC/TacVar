@@ -81,9 +81,10 @@ Optional partes options:
 ### 3.3 Outputs and examples
 
 **Example 1**:
-Run tests to measure the W-Distance of clock_gettime timing functions under the 2-core per-core timing measurement scenario. Set theoretical of two gauges to 1000ns and 2000ns, without flush kernels.
+Run tests to measure the W-Distance of clock_gettime timing functions under the 2-core per-core timing measurement scenario. Set theoretical of two gauges to 1000ns and 2000ns, without flush kernels. Here in the outputs, the line leading by "#---" is the comment line, which is not printed in the actual output.
 ```bash
 $ mpirun -np 2 ./partes-mpi.x --ta 1000 --tb 2000
+#--- Run-time settings
 Repeat 1000 runtime measurements, target gauge time: 1000ns, 2000ns
 Timer: clock_gettime
 Gauge: sub_scalar
@@ -93,16 +94,21 @@ Rear kernel: NONE, size: 0 KiB, real size: 0 KiB
 tb flush info:
 Front kernel: NONE, size: 0 KiB, real size: 0 KiB
 Rear kernel: NONE, size: 0 KiB, real size: 0 KiB
+#--- Considering the main frequency of the processor could be volatile, ParTES measures the number of gauge step per nanosecond (gpns).
 [Rank 0] Gauge info: gpns=3.098000
 [Rank 1] Gauge info: gpns=3.098000
 t0 = 1000, number of gauges: 3098
 t1 = 2000, number of gauges: 6196
+#--- Result checks for avoiding the overly optimization of the flush kernel.
 TA Front kernel percentage gap: 0.000000%
 TA Rear kernel percentage gap: 0.000000%
 TB Front kernel percentage gap: 0.000000%
 TB Rear kernel percentage gap: 0.000000%
+#--- The tailed fraction being cutted.
 Percentage cut: 1.000000
+#--- Theoretical time gap between ta and tb
 Time gap: 1000ns
+#--- Measured W per key quantile.
 Quantile, W(Ta), W(Tb), W(Tb)-W(Ta)
 0, 1027, 2026, 999
 50, 1030, 2029, 999
@@ -111,6 +117,7 @@ Quantile, W(Ta), W(Tb), W(Tb)-W(Ta)
 95, 1032, 2040, 1008
 99, 2109, 887338, 885229
 100, 2109, 887338, 885229
+#--- Overall W
 Wasserstein distance: 9842.330000
 ```
 The per-step measured running time of each core is saved to `pates_<ta/tb>_r<rank_id>.csv`. The cumulative density function discrete array of the first and second gauges' measured running times is saved to `partes_<ta/tb>_cdf.csv` in the current directory.
