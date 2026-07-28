@@ -43,6 +43,7 @@ static uint64_t counter_start_slot[64][TACVAR_COUNTER_COUNT];
 static char g_bench[64];
 static char g_class[8];
 static int g_identity_set;
+static int g_init_warned;
 
 static void set_identity(void)
 {
@@ -76,25 +77,34 @@ int tacvar_npb_ensure_init(void)
 {
     tacvar_context_t ctx;
     int thread = 0;
+    int rc = 0;
 
     if (tacvar_is_ready())
         return 0;
 
-    set_identity();
 #ifdef _OPENMP
-    thread = omp_get_thread_num();
+#pragma omp critical(tacvar_npb_init)
 #endif
-    memset(&ctx, 0, sizeof(ctx));
-    ctx.suite = "npb-omp";
-    ctx.benchmark = g_bench;
-    ctx.klass = g_class;
-    ctx.rank = 0;
-    ctx.thread = thread;
-    ctx.nprocs = 1;
+    {
+        if (!tacvar_is_ready()) {
+            set_identity();
 #ifdef _OPENMP
-    ctx.nprocs = omp_get_max_threads();
+            thread = omp_get_thread_num();
 #endif
-    return tacvar_init(&ctx);
+            memset(&ctx, 0, sizeof(ctx));
+            ctx.suite = "npb-omp";
+            ctx.benchmark = g_bench;
+            ctx.klass = g_class;
+            ctx.rank = 0;
+            ctx.thread = thread;
+            ctx.nprocs = 1;
+#ifdef _OPENMP
+            ctx.nprocs = omp_get_max_threads();
+#endif
+            rc = tacvar_init(&ctx);
+        }
+    }
+    return tacvar_is_ready() ? 0 : (rc != 0 ? rc : -1);
 }
 
 void tacvar_npb_timer_clear(int n)
@@ -104,11 +114,17 @@ void tacvar_npb_timer_clear(int n)
 
 void tacvar_npb_timer_start(int n)
 {
-    if (!tacvar_is_ready())
-        (void)tacvar_npb_ensure_init();
+    if (!tacvar_is_ready()) {
+        if (tacvar_npb_ensure_init() != 0 && !g_init_warned) {
+            /* native timers need no TIMER_INIT; TSC may be wrong if init never ran. */
+            fprintf(stderr, "tacvar: NPB-OMP init failed; counters/CSV disabled\n");
+            g_init_warned = 1;
+        }
+    }
     cpu_start_slot[n] = sched_getcpu();
 #if TACVAR_COUNTER_COUNT > 0
-    TACVAR_COUNTER_READ(counter_start_slot[n]);
+    if (tacvar_is_ready())
+        TACVAR_COUNTER_READ(counter_start_slot[n]);
 #endif
     TACVAR_TIMER_BEGIN(timer_start_raw[n]);
 }
@@ -125,21 +141,25 @@ void tacvar_npb_timer_stop(int n)
 
     TACVAR_TIMER_END(timer_stop_raw);
 #if TACVAR_COUNTER_COUNT > 0
-    TACVAR_COUNTER_READ(counter_stop);
-    TACVAR_COUNTER_DELTAS(counter_delta, counter_start_slot[n], counter_stop);
+    if (tacvar_is_ready()) {
+        TACVAR_COUNTER_READ(counter_stop);
+        TACVAR_COUNTER_DELTAS(counter_delta, counter_start_slot[n], counter_stop);
+    }
 #endif
     cpu_stop = sched_getcpu();
     elapsed_ns = TACVAR_TIMER_DELTA_NS(timer_start_raw[n], timer_stop_raw);
     elapsed[n] += (double)elapsed_ns * 1e-9;
 
-    tacvar_csv_write_simple(n, timer_start_raw[n], timer_stop_raw, elapsed_ns,
-                            cpu_start_slot[n], cpu_stop,
+    if (tacvar_is_ready()) {
+        tacvar_csv_write_simple(n, timer_start_raw[n], timer_stop_raw, elapsed_ns,
+                                cpu_start_slot[n], cpu_stop,
 #if TACVAR_COUNTER_COUNT > 0
-                            counter_start_slot[n], counter_stop, counter_delta
+                                counter_start_slot[n], counter_stop, counter_delta
 #else
-                            NULL, NULL, NULL
+                                NULL, NULL, NULL
 #endif
-                            );
+                                );
+    }
 }
 
 double tacvar_npb_timer_read(int n)

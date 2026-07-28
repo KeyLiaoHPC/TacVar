@@ -69,3 +69,5 @@ suites/lmbench/bin/
 suites/lmbench/data_*/
 suites/lmbench/**/tacvar_build/
 suites/lmbench/**/*.smoke.bak
+suites/NPB3.4.4/NPB3.4-MPI/config/tacvar_build_x86_64/tacvar_generated_config.mk
+suites/NPB3.4.4/NPB3.4-MPI/MG/npbparams.h

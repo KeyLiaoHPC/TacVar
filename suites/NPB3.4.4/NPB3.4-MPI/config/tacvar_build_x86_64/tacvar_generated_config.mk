@@ -3,8 +3,8 @@ TACVAR_ARCH := x86_64
 TACVAR_CONSUMER := npb-mpi
 TACVAR_TIMER := native
 TACVAR_TIMER_RESOLVED := mpi_wtime
-TACVAR_COUNTER_BACKEND := none
-TACVAR_MEASURE_OBJS := tacvar_measure.o tacvar_csv.o
-TACVAR_MEASURE_CFLAGS := -I/mnt/keylabmain/nfs/hpckey/03-Project/TacVar/src/measure -I/mnt/keylabmain/nfs/hpckey/03-Project/TacVar/src/measure/include -I/mnt/keylabmain/nfs/hpckey/03-Project/TacVar/src/measure/timers -I/mnt/keylabmain/nfs/hpckey/03-Project/TacVar/src/measure/counters -I/mnt/keylabmain/nfs/hpckey/03-Project/TacVar/src/measure/events -DTACVAR_HAS_GENERATED_CONFIG=1
-TACVAR_MEASURE_LDFLAGS := 
+TACVAR_COUNTER_BACKEND := papi_read
+TACVAR_MEASURE_OBJS := tacvar_measure.o tacvar_csv.o counter_papi.o
+TACVAR_MEASURE_CFLAGS := -I/mnt/keylabmain/nfs/hpckey/03-Project/TacVar/src/measure -I/mnt/keylabmain/nfs/hpckey/03-Project/TacVar/src/measure/include -I/mnt/keylabmain/nfs/hpckey/03-Project/TacVar/src/measure/timers -I/mnt/keylabmain/nfs/hpckey/03-Project/TacVar/src/measure/counters -I/mnt/keylabmain/nfs/hpckey/03-Project/TacVar/src/measure/events -DTACVAR_HAS_GENERATED_CONFIG=1 -I/home/hpckey/01-App/papi-7.1.0/include
+TACVAR_MEASURE_LDFLAGS := -L/home/hpckey/01-App/papi-7.1.0/lib -lpapi -Wl,-rpath,/home/hpckey/01-App/papi-7.1.0/lib
 TACVAR_MEASURE_ROOT := /mnt/keylabmain/nfs/hpckey/03-Project/TacVar/src/measure

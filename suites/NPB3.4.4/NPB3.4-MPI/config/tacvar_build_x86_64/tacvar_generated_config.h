@@ -9,16 +9,15 @@
 #define TACVAR_ARCH_STR "x86_64"
 #define TACVAR_TIMER_NAME "native(mpi_wtime)"
 #define TACVAR_TIMER_RESOLVED "mpi_wtime"
-#define TACVAR_COUNTER_BACKEND_NAME "none"
-#define TACVAR_COUNTER_COUNT 0
+#define TACVAR_COUNTER_BACKEND_NAME "papi_read"
+#define TACVAR_COUNTER_COUNT 2
 #define TACVAR_NSTP 0
 #define TACVAR_OUTPUT_ROOT_DEFAULT "."
 
-/* no counter names */
-static const char *const *const TACVAR_COUNTER_NAME_LIST = (const char *const *)0;
+static const char *const TACVAR_COUNTER_NAME_LIST[2] = { "PAPI_L2_TCM", "PAPI_L3_TCM" };
 
 #include "timer_native.h"
-#include "counter_none.h"
+#include "counter_papi.h"
 
 #define TACVAR_TIMER_INIT()            tacvar_timer_native_init()
 #define TACVAR_TIMER_FINI()            tacvar_timer_native_fini()
@@ -26,8 +25,8 @@ static const char *const *const TACVAR_COUNTER_NAME_LIST = (const char *const *)
 #define TACVAR_TIMER_END(raw)          tacvar_timer_native_end(&(raw))
 #define TACVAR_TIMER_DELTA_NS(b, e)    tacvar_timer_native_delta_ns((b), (e))
 
-#define TACVAR_COUNTER_INIT()          tacvar_counter_none_init(TACVAR_COUNTER_NAME_LIST, TACVAR_COUNTER_COUNT)
-#define TACVAR_COUNTER_FINI()          tacvar_counter_none_fini()
-#define TACVAR_COUNTER_READ(values)    tacvar_counter_none_read(values)
+#define TACVAR_COUNTER_INIT()          tacvar_counter_papi_init(TACVAR_COUNTER_NAME_LIST, TACVAR_COUNTER_COUNT)
+#define TACVAR_COUNTER_FINI()          tacvar_counter_papi_fini()
+#define TACVAR_COUNTER_READ(values)    tacvar_counter_papi_read(values)
 
 #endif /* TACVAR_GENERATED_CONFIG_H_INCLUDED */

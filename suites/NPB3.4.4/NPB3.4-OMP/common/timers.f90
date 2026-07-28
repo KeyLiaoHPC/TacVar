@@ -29,6 +29,7 @@
 
       subroutine timer_clear(n)
       use tacvar_npb_c
+      use, intrinsic :: iso_c_binding, only: c_int
       implicit none
       integer n
       call tacvar_npb_timer_clear(int(n, kind=c_int))
@@ -37,6 +38,7 @@
 
       subroutine timer_start(n)
       use tacvar_npb_c
+      use, intrinsic :: iso_c_binding, only: c_int
       implicit none
       integer n
       call tacvar_npb_timer_start(int(n, kind=c_int))
@@ -45,6 +47,7 @@
 
       subroutine timer_stop(n)
       use tacvar_npb_c
+      use, intrinsic :: iso_c_binding, only: c_int
       implicit none
       integer n
       call tacvar_npb_timer_stop(int(n, kind=c_int))
@@ -53,6 +56,7 @@
 
       double precision function timer_read(n)
       use tacvar_npb_c
+      use, intrinsic :: iso_c_binding, only: c_int
       implicit none
       integer n
       timer_read = tacvar_npb_timer_read(int(n, kind=c_int))
