@@ -60,7 +60,12 @@ clean:
 	- rm -f sys/setparams sys/makesuite sys/setparams.h
 	- rm -rf */rii_files
 
-veryclean: clean
+# After editing tacvar.conf — drop generated measure lib + timer glue, then rebuild.
+tacvar_clean:
+	- rm -f common/tacvar_npb.o common/c_timers.o
+	- rm -rf config/tacvar_build_*
+
+veryclean: clean tacvar_clean
 	- rm -f config/make.def config/suite.def 
 	- rm -f bin/sp.* bin/lu.* bin/mg.* bin/ft.* bin/bt.* bin/is.*
 	- rm -f bin/ep.* bin/cg.* bin/ua.* bin/dc.* bin/ADC.*
