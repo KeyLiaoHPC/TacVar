@@ -61,3 +61,11 @@ dkms.conf
 *.log
 *.csv
 
+suites/NPB3.4.4/NPB3.4-MPI/sys/setparams
+suites/NPB3.4.4/NPB3.4-OMP/sys/setparams
+
+# lmbench build / run products (sources tracked in-tree)
+suites/lmbench/bin/
+suites/lmbench/data_*/
+suites/lmbench/**/tacvar_build/
+suites/lmbench/**/*.smoke.bak
