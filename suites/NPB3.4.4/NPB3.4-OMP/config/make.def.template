@@ -159,3 +159,9 @@ WTIME  = wtime.c
 # MACHINE	=	-DIBM
 
 
+
+#---------------------------------------------------------------------------
+# TacVar: edit ../tacvar.conf then rebuild. Optional overrides:
+#   TACVAR_CONF, TACVAR_ROOT, PAPI_HOME
+#---------------------------------------------------------------------------
+# PAPI_HOME = /home/hpckey/01-App/papi-7.1.0

@@ -1,0 +1,23 @@
+# Protected NPB/lmbench benchmark sources — tests must not modify these.
+suites/NPB3.4.4/NPB3.4-MPI/BT/
+suites/NPB3.4.4/NPB3.4-MPI/CG/
+suites/NPB3.4.4/NPB3.4-MPI/DT/
+suites/NPB3.4.4/NPB3.4-MPI/EP/
+suites/NPB3.4.4/NPB3.4-MPI/FT/
+suites/NPB3.4.4/NPB3.4-MPI/IS/is.c
+suites/NPB3.4.4/NPB3.4-MPI/LU/
+suites/NPB3.4.4/NPB3.4-MPI/MG/
+suites/NPB3.4.4/NPB3.4-MPI/SP/
+suites/NPB3.4.4/NPB3.4-OMP/BT/
+suites/NPB3.4.4/NPB3.4-OMP/CG/
+suites/NPB3.4.4/NPB3.4-OMP/DC/
+suites/NPB3.4.4/NPB3.4-OMP/EP/
+suites/NPB3.4.4/NPB3.4-OMP/FT/
+suites/NPB3.4.4/NPB3.4-OMP/IS/is.c
+suites/NPB3.4.4/NPB3.4-OMP/LU/
+suites/NPB3.4.4/NPB3.4-OMP/MG/
+suites/NPB3.4.4/NPB3.4-OMP/SP/
+suites/NPB3.4.4/NPB3.4-OMP/UA/
+suites/lmbench/src/bench.h
+suites/lmbench/src/lat_syscall.c
+suites/lmbench/src/bw_mem.c

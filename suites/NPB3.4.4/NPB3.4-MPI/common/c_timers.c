@@ -1,55 +1,18 @@
+/**
+ * @file c_timers.c
+ * @brief NPB-MPI C timer ABI — delegates to tacvar_npb_*.
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "mpi.h"
+#include "tacvar_npb.h"
 
-static double start[64], elapsed[64];
+void timer_clear(int n) { tacvar_npb_timer_clear(n); }
+void timer_start(int n) { tacvar_npb_timer_start(n); }
+void timer_stop(int n)  { tacvar_npb_timer_stop(n); }
+double timer_read(int n) { return tacvar_npb_timer_read(n); }
 
-/*****************************************************************/
-/******            T  I  M  E  R  _  C  L  E  A  R          ******/
-/*****************************************************************/
-void timer_clear( int n )
-{
-    elapsed[n] = 0.0;
-}
-
-
-/*****************************************************************/
-/******            T  I  M  E  R  _  S  T  A  R  T          ******/
-/*****************************************************************/
-void timer_start( int n )
-{
-    start[n] = MPI_Wtime();
-}
-
-
-/*****************************************************************/
-/******            T  I  M  E  R  _  S  T  O  P             ******/
-/*****************************************************************/
-void timer_stop( int n )
-{
-    double t, now;
-
-    now = MPI_Wtime();
-    t = now - start[n];
-    elapsed[n] += t;
-
-}
-
-
-/*****************************************************************/
-/******            T  I  M  E  R  _  R  E  A  D             ******/
-/*****************************************************************/
-double timer_read( int n )
-{
-    return( elapsed[n] );
-}
-
-
-/*****************************************************************/
-/******            C H E C K _ T I M E R _ F L A G          ******/
-/*****************************************************************/
-int check_timer_flag( void )
+int check_timer_flag(void)
 {
     int timer_on = 0;
     char *ev = getenv("NPB_TIMER_FLAG");
@@ -63,15 +26,12 @@ int check_timer_flag( void )
                  strcmp(ev, "yes") == 0 || strcmp(ev, "YES") == 0 ||
                  strcmp(ev, "true") == 0 || strcmp(ev, "TRUE") == 0)
             timer_on = 1;
-    }
-    else {
+    } else {
         FILE *fp = fopen("timer.flag", "r");
         if (fp != NULL) {
             fclose(fp);
             timer_on = 1;
         }
     }
-
     return timer_on;
 }
-

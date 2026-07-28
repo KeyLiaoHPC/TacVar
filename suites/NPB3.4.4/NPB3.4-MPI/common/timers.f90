@@ -1,109 +1,75 @@
 !---------------------------------------------------------------------
+! NPB-MPI Fortran timers — bind(C) to tacvar_npb_* (shared with C path).
+! Benchmark sources unchanged; only this common timer layer is hooked.
 !---------------------------------------------------------------------
-      
-      module timers
 
-      double precision start(64), elapsed(64)
-      double precision, external :: MPI_Wtime
+      module tacvar_npb_c
+        use, intrinsic :: iso_c_binding
+        implicit none
+        interface
+          subroutine tacvar_npb_timer_clear(n) bind(C, name="tacvar_npb_timer_clear")
+            import :: c_int
+            integer(c_int), value :: n
+          end subroutine
+          subroutine tacvar_npb_timer_start(n) bind(C, name="tacvar_npb_timer_start")
+            import :: c_int
+            integer(c_int), value :: n
+          end subroutine
+          subroutine tacvar_npb_timer_stop(n) bind(C, name="tacvar_npb_timer_stop")
+            import :: c_int
+            integer(c_int), value :: n
+          end subroutine
+          function tacvar_npb_timer_read(n) bind(C, name="tacvar_npb_timer_read")
+            import :: c_int, c_double
+            integer(c_int), value :: n
+            real(c_double) :: tacvar_npb_timer_read
+          end function
+        end interface
+      end module tacvar_npb_c
 
-      end module timers
-
-
-!---------------------------------------------------------------------
-!---------------------------------------------------------------------
-      
       subroutine timer_clear(n)
-
-!---------------------------------------------------------------------
-!---------------------------------------------------------------------
-
-      use timers
+      use tacvar_npb_c
+      use, intrinsic :: iso_c_binding, only: c_int
       implicit none
-
       integer n
-
-      elapsed(n) = 0.d0
+      call tacvar_npb_timer_clear(int(n, kind=c_int))
       return
       end
-
-
-!---------------------------------------------------------------------
-!---------------------------------------------------------------------
 
       subroutine timer_start(n)
-
-!---------------------------------------------------------------------
-!---------------------------------------------------------------------
-
-      use timers
+      use tacvar_npb_c
+      use, intrinsic :: iso_c_binding, only: c_int
       implicit none
-
       integer n
-
-      start(n) = MPI_Wtime()
-
+      call tacvar_npb_timer_start(int(n, kind=c_int))
       return
       end
-      
-
-!---------------------------------------------------------------------
-!---------------------------------------------------------------------
 
       subroutine timer_stop(n)
-
-!---------------------------------------------------------------------
-!---------------------------------------------------------------------
-
-      use timers
+      use tacvar_npb_c
+      use, intrinsic :: iso_c_binding, only: c_int
       implicit none
-
       integer n
-
-      double precision t, now
-
-      now = MPI_Wtime()
-      t = now - start(n)
-      elapsed(n) = elapsed(n) + t
-
+      call tacvar_npb_timer_stop(int(n, kind=c_int))
       return
       end
-
-
-!---------------------------------------------------------------------
-!---------------------------------------------------------------------
 
       double precision function timer_read(n)
-
-!---------------------------------------------------------------------
-!---------------------------------------------------------------------
-
-      use timers
+      use tacvar_npb_c
+      use, intrinsic :: iso_c_binding, only: c_int
       implicit none
-
       integer n
-      
-      timer_read = elapsed(n)
-
+      timer_read = tacvar_npb_timer_read(int(n, kind=c_int))
       return
       end
 
-!---------------------------------------------------------------------
-!---------------------------------------------------------------------
-
-      subroutine check_timer_flag( timeron )
-
-!---------------------------------------------------------------------
-!---------------------------------------------------------------------
-
+      subroutine check_timer_flag(timeron)
       implicit none
       logical timeron
-
       integer nc, ios
       character(len=20) val
 
       timeron = .false.
-
-! ... Check environment variable "NPB_TIMER_FLAG"
       call get_environment_variable('NPB_TIMER_FLAG', val, nc, ios)
       if (ios .eq. 0) then
          if (nc .le. 0) then
@@ -115,18 +81,12 @@
      &            val .eq. 'true' .or. val .eq. 'TRUE') then
             timeron = .true.
          endif
-
       else
-
-! ... Check if the "timer.flag" file exists
-         open (unit=2, file='timer.flag', status='old', iostat=ios)
+         open(unit=99, file='timer.flag', status='old', iostat=ios)
          if (ios .eq. 0) then
-            close(2)
+            close(99)
             timeron = .true.
          endif
-
       endif
-
       return
       end
-

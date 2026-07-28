@@ -33,15 +33,14 @@ ${COMMON}/c_print_results.o: ${COMMON}/c_print_results.c ../config/make.def
 ${COMMON}/timers.o: ${COMMON}/timers.f90 ../config/make.def
 	cd ${COMMON}; ${FCOMPILE} timers.f90
 
-${COMMON}/c_timers.o: ${COMMON}/c_timers.c ../config/make.def
-	cd ${COMMON}; ${CCOMPILE} c_timers.c
+${COMMON}/c_timers.o: ${COMMON}/c_timers.c ../config/make.def ${TACVAR_GEN_H}
+	cd ${COMMON}; ${CCOMPILE} $(TACVAR_CFLAGS) c_timers.c
+
+${COMMON}/tacvar_npb.o: ${COMMON}/tacvar_npb.c ../config/make.def ${TACVAR_GEN_H}
+	cd ${COMMON}; ${CCOMPILE} $(TACVAR_CFLAGS) tacvar_npb.c
 
 ${COMMON}/wtime.o: ${COMMON}/${WTIME} ../config/make.def
 	cd ${COMMON}; ${CCOMPILE} ${MACHINE} -o wtime.o ${COMMON}/${WTIME}
-# For most machines or CRAY or IBM
-#	cd ${COMMON}; ${CCOMPILE} ${MACHINE} ${COMMON}/wtime.c
-# For a precise timer on an SGI Power Challenge, try:
-#	cd ${COMMON}; ${CCOMPILE} -o wtime.o ${COMMON}/wtime_sgi64.c
 
 ${COMMON}/c_wtime.o: ${COMMON}/${WTIME} ../config/make.def
 	cd ${COMMON}; ${CCOMPILE} -o c_wtime.o ${COMMON}/${WTIME}
@@ -61,4 +60,38 @@ ${BENCHMARKU}: default
 
 .SUFFIXES:
 .SUFFIXES: .c .h .f90 .f .o
+
+# ----- TacVar measurement library (build-time conf) -----
+TACVAR_ROOT    ?= $(abspath ../../../../src/measure)
+TACVAR_CONF    ?= $(abspath ../tacvar.conf)
+TACVAR_OUTDIR  ?= $(abspath ../config/tacvar_build_$(shell uname -m))
+TACVAR_GEN_H   = $(TACVAR_OUTDIR)/tacvar_generated_config.h
+TACVAR_GEN_MK  = $(TACVAR_OUTDIR)/tacvar_generated_config.mk
+TACVAR_LIB     = $(TACVAR_OUTDIR)/libtacvar_measure.a
+PAPI_HOME      ?= /home/hpckey/01-App/papi-7.1.0
+TACVAR_EXTRA_LIBS ?=
+
+$(TACVAR_GEN_H) $(TACVAR_GEN_MK): $(TACVAR_CONF) $(TACVAR_ROOT)/tools/gen_config.py
+	@mkdir -p $(TACVAR_OUTDIR)
+	python3 $(TACVAR_ROOT)/tools/gen_config.py --conf $(TACVAR_CONF) \
+		--compiler $(CC) --consumer npb-omp --outdir $(TACVAR_OUTDIR) \
+		--measure-root $(TACVAR_ROOT) \
+		--papi-inc $(PAPI_HOME)/include --papi-lib $(PAPI_HOME)/lib
+
+$(TACVAR_LIB): $(TACVAR_GEN_H)
+	$(MAKE) -C $(TACVAR_ROOT) CONF=$(TACVAR_CONF) CONSUMER=npb-omp \
+		OUTDIR=$(TACVAR_OUTDIR) CC=$(CC) \
+		PAPI_INC=$(PAPI_HOME)/include PAPI_LIB=$(PAPI_HOME)/lib
+
+F_LIB += $(COMMON)/tacvar_npb.o $(TACVAR_LIB) $(TACVAR_EXTRA_LIBS)
+C_LIB += $(COMMON)/tacvar_npb.o $(TACVAR_LIB) $(TACVAR_EXTRA_LIBS)
+TACVAR_CFLAGS = -D_GNU_SOURCE -I$(TACVAR_ROOT)/include -I$(TACVAR_OUTDIR) -I$(COMMON) \
+	-I$(TACVAR_ROOT)/timers -I$(TACVAR_ROOT)/counters -I$(TACVAR_ROOT) \
+	-DTACVAR_HAS_GENERATED_CONFIG -include $(TACVAR_GEN_H)
+-include $(TACVAR_GEN_MK)
+ifneq ($(strip $(TACVAR_MEASURE_LDFLAGS)),)
+TACVAR_EXTRA_LIBS += $(TACVAR_MEASURE_LDFLAGS)
+endif
+
+${PROGRAM}: $(TACVAR_LIB) ${COMMON}/tacvar_npb.o
 
