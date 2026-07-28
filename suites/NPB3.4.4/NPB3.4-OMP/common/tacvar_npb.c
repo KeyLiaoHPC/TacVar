@@ -14,6 +14,7 @@
 #include <sched.h>
 #include <unistd.h>
 #include <libgen.h>
+#include <dlfcn.h>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -39,6 +40,30 @@ static uint64_t counter_start_slot[64][TACVAR_COUNTER_COUNT];
 #pragma omp threadprivate(counter_start_slot)
 #endif
 #endif
+
+/* Per-timer-ID source location cache (resolved via dladdr). */
+static char timer_source[64][128];
+
+/**
+ * Resolve a return address to a human-readable symbol string.
+ * Result is cached per timer ID so dladdr runs only once per timer slot.
+ */
+static const char *resolve_source(int n, void *retaddr)
+{
+    char *buf = timer_source[n];
+    if (buf[0] != '\0')
+        return buf;
+
+    buf[0] = '\0';
+    if (!retaddr)
+        return buf;
+
+    Dl_info info;
+    if (dladdr(retaddr, &info) && info.dli_sname) {
+        snprintf(buf, sizeof(timer_source[0]), "%s", info.dli_sname);
+    }
+    return buf;
+}
 
 static char g_bench[64];
 static char g_class[8];
@@ -138,6 +163,7 @@ void tacvar_npb_timer_stop(int n)
     uint64_t counter_stop[TACVAR_COUNTER_COUNT];
     uint64_t counter_delta[TACVAR_COUNTER_COUNT];
 #endif
+    const char *source = "";
 
     TACVAR_TIMER_END(timer_stop_raw);
 #if TACVAR_COUNTER_COUNT > 0
@@ -150,6 +176,9 @@ void tacvar_npb_timer_stop(int n)
     elapsed_ns = TACVAR_TIMER_DELTA_NS(timer_start_raw[n], timer_stop_raw);
     elapsed[n] += (double)elapsed_ns * 1e-9;
 
+    /* Resolve caller source location (cached per timer ID). */
+    source = resolve_source(n, __builtin_return_address(0));
+
     if (tacvar_is_ready()) {
         tacvar_csv_write_simple(n, timer_start_raw[n], timer_stop_raw, elapsed_ns,
                                 cpu_start_slot[n], cpu_stop,
@@ -158,7 +187,7 @@ void tacvar_npb_timer_stop(int n)
 #else
                                 NULL, NULL, NULL
 #endif
-                                );
+                                , source);
     }
 }
 

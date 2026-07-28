@@ -61,13 +61,29 @@ dkms.conf
 *.log
 *.csv
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# Measure library build tree (objects, archives, generated configs)
+src/measure/build/
+
+# Generated TacVar measure configs (any OUTDIR)
+**/tacvar_generated_config.h
+**/tacvar_generated_config.mk
+
+# NPB build / run products
 suites/NPB3.4.4/NPB3.4-MPI/sys/setparams
 suites/NPB3.4.4/NPB3.4-OMP/sys/setparams
+suites/NPB3.4.4/**/bin/
+suites/NPB3.4.4/**/data_*/
+suites/NPB3.4.4/**/tacvar_build_*/
+suites/NPB3.4.4/**/npbparams.h
 
 # lmbench build / run products (sources tracked in-tree)
 suites/lmbench/bin/
 suites/lmbench/data_*/
 suites/lmbench/**/tacvar_build/
 suites/lmbench/**/*.smoke.bak
-suites/NPB3.4.4/NPB3.4-MPI/config/tacvar_build_x86_64/tacvar_generated_config.mk
-suites/NPB3.4.4/NPB3.4-MPI/MG/npbparams.h

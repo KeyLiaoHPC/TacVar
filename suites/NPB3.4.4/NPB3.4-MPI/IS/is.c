@@ -324,6 +324,7 @@ void c_print_results( char   *name,
 #include "../common/c_timers.h"
 
 
+
 /*****************************************************************/
 /*     Dynamically allocate space for main arrays                */
 /*****************************************************************/
@@ -1097,6 +1098,9 @@ int main( int argc, char **argv )
     for( i=1; i<=T_LAST; i++ ) timer_clear( i );
 #endif
 
+/*----- TacVar: reserve event buffer (instrumentation only) -----*/
+    tacvar_npb_prepare( (uint64_t)MAX_ITERATIONS );
+/*----- end TacVar -----*/
 /*  Start timer  */             
     timer_start( 0 );
 
@@ -1105,7 +1109,13 @@ int main( int argc, char **argv )
     for( iteration=1; iteration<=MAX_ITERATIONS; iteration++ )
     {
         if( my_rank == 0 && CLASS != 'S' ) printf( "        %d\n", iteration );
+        /*----- TacVar: per-step timing (no workload change) -----*/
+        tacvar_npb_step_start();
+        /*----- end TacVar -----*/
         rank( iteration );
+        /*----- TacVar -----*/
+        tacvar_npb_step_stop();
+        /*----- end TacVar -----*/
     }
 
 

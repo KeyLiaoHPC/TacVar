@@ -11,8 +11,8 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 "$HOST" "test -d '$REMOTE_ROOT'" \
 ssh "$HOST" bash -s <<EOF
 set -euo pipefail
 export PATH=/home/hpckey/01-App/openmpi-5.0.8/bin:\$PATH
-export LD_LIBRARY_PATH=/home/hpckey/01-App/openmpi-5.0.8/lib:/home/hpckey/01-App/papi-7.2.0b2/lib:\${LD_LIBRARY_PATH:-}
-export PAPI_HOME=/home/hpckey/01-App/papi-7.2.0b2
+export LD_LIBRARY_PATH=/home/hpckey/01-App/openmpi-5.0.8/lib:/home/hpckey/01-App/papi/lib:\${LD_LIBRARY_PATH:-}
+export PAPI_HOME=/home/hpckey/01-App/papi
 export MPI_HOME=/home/hpckey/01-App/openmpi-5.0.8
 export TACVAR_NSTP_ARM=10
 cd '$REMOTE_ROOT'
@@ -22,5 +22,6 @@ bash src/measure/tests/run_unit_tests.sh
 bash src/measure/tests/run_backend_smoke.sh
 # Small suite smokes (<=4 cores); use arch-local build dirs via force rebuild in scripts
 bash suites/NPB3.4.4/test_tacvar.sh --run-smoke
+bash suites/NPB3.4.4/test_npb_backend_matrix.sh
 bash suites/lmbench/scripts/test_tacvar.sh --run-smoke
 EOF

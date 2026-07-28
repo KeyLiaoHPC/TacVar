@@ -204,6 +204,9 @@
        end do
        call mpi_barrier(comm_setup, error)
 
+!----- TacVar: reserve event buffer (instrumentation only) -----
+       call tacvar_prepare(int(niter, kind=8))
+!----- end TacVar -----
        call timer_start(1)
 
        do  step = 1, niter
@@ -216,6 +219,9 @@
              endif
           endif
 
+!----- TacVar: per-step timing (no workload change) -----
+          call tacvar_step_start()
+!----- end TacVar -----
           call adi
 
           if (iotype .ne. 0) then
@@ -232,6 +238,9 @@
                   idump = idump + 1
               endif
           endif
+!----- TacVar -----
+          call tacvar_step_stop()
+!----- end TacVar -----
        end do
 
        call timer_start(2)

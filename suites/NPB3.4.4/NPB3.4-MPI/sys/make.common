@@ -35,6 +35,7 @@ PAPI_HOME      ?= /home/hpckey/01-App/papi-7.1.0
 TACVAR_EXTRA_LIBS ?=
 TACVAR_CFLAGS = -D_GNU_SOURCE -I$(TACVAR_ROOT)/include -I$(TACVAR_OUTDIR) -I$(COMMON) \
 	-I$(TACVAR_ROOT)/timers -I$(TACVAR_ROOT)/counters -I$(TACVAR_ROOT) \
+	-I$(PAPI_HOME)/include \
 	-DTACVAR_HAS_GENERATED_CONFIG -include $(TACVAR_GEN_H)
 
 ${COMMON}/${RAND}.o: ${COMMON}/${RAND}.f90
@@ -60,8 +61,13 @@ ${COMMON}/timers.o: ${COMMON}/timers.f90
 ${COMMON}/c_timers.o: ${COMMON}/c_timers.c ../config/make.def ${TACVAR_GEN_H}
 	cd ${COMMON}; ${CCOMPILE} $(TACVAR_CFLAGS) c_timers.c
 
-${COMMON}/tacvar_npb.o: ${COMMON}/tacvar_npb.c ../config/make.def ${TACVAR_GEN_H}
+${COMMON}/tacvar_npb.o: ${COMMON}/tacvar_npb.c ${COMMON}/tacvar_npb.h \
+		${COMMON}/tacvar_npb_regions.h ../config/make.def ${TACVAR_GEN_H}
 	cd ${COMMON}; ${CCOMPILE} $(TACVAR_CFLAGS) tacvar_npb.c
+
+${COMMON}/tacvar_npb_regions.o: ${COMMON}/tacvar_npb_regions.c \
+		${COMMON}/tacvar_npb_regions.h ../config/make.def ${TACVAR_GEN_H}
+	cd ${COMMON}; ${CCOMPILE} $(TACVAR_CFLAGS) tacvar_npb_regions.c
 
 # Normally setparams updates npbparams.h only if the settings (CLASS)
 # have changed. However, we also want to update if the compile options
@@ -91,8 +97,8 @@ $(TACVAR_LIB): $(TACVAR_GEN_H)
 		PAPI_INC=$(PAPI_HOME)/include PAPI_LIB=$(PAPI_HOME)/lib
 
 # Inject TacVar into every benchmark link without editing per-bench Makefiles.
-FMPI_LIB += $(COMMON)/tacvar_npb.o $(TACVAR_LIB) $(TACVAR_EXTRA_LIBS)
-CMPI_LIB += $(COMMON)/tacvar_npb.o $(TACVAR_LIB) $(TACVAR_EXTRA_LIBS)
+FMPI_LIB += $(COMMON)/tacvar_npb.o $(COMMON)/tacvar_npb_regions.o $(TACVAR_LIB) $(TACVAR_EXTRA_LIBS)
+CMPI_LIB += $(COMMON)/tacvar_npb.o $(COMMON)/tacvar_npb_regions.o $(TACVAR_LIB) $(TACVAR_EXTRA_LIBS)
 # Skip include remake when only cleaning (avoids regenerating then deleting).
 ifeq (,$(filter tacvar_clean,$(MAKECMDGOALS)))
 -include $(TACVAR_GEN_MK)
@@ -102,11 +108,11 @@ endif
 endif
 
 # Ensure tacvar objects exist before linking PROGRAM
-${PROGRAM}: $(TACVAR_LIB) ${COMMON}/tacvar_npb.o
+${PROGRAM}: $(TACVAR_LIB) ${COMMON}/tacvar_npb.o ${COMMON}/tacvar_npb_regions.o
 
 # After editing tacvar.conf: make tacvar_clean && make <bench> CLASS=...
 .PHONY: tacvar_clean
 tacvar_clean:
-	- rm -f $(COMMON)/tacvar_npb.o $(COMMON)/c_timers.o
+	- rm -f $(COMMON)/tacvar_npb.o $(COMMON)/tacvar_npb_regions.o $(COMMON)/c_timers.o $(COMMON)/timers.o
 	- rm -rf $(TACVAR_OUTDIR)
 

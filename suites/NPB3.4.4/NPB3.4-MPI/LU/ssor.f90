@@ -71,6 +71,9 @@
 
       call MPI_BARRIER( comm_solve, IERROR )
  
+!----- TacVar: reserve event buffer (instrumentation only) -----
+      call tacvar_prepare(int(niter, kind=8))
+!----- end TacVar -----
       call timer_clear(1)
       call timer_start(1)
 
@@ -87,6 +90,10 @@
  200           format(' Time step ', i4)
             endif
          endif
+
+!----- TacVar: per-step timing (no workload change) -----
+         call tacvar_step_start()
+!----- end TacVar -----
  
 !---------------------------------------------------------------------
 !   perform SSOR iteration
@@ -238,8 +245,14 @@
             if (id.eq.0) then
                write (*,1004) istep
             end if
+!----- TacVar -----
+            call tacvar_step_stop()
+!----- end TacVar -----
             go to 900
          end if
+!----- TacVar -----
+         call tacvar_step_stop()
+!----- end TacVar -----
  
       end do
   900 continue

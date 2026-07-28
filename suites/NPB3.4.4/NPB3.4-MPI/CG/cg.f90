@@ -298,6 +298,9 @@
       end do
       call mpi_barrier( comm_solve, ierr )
 
+!----- TacVar: reserve event buffer (instrumentation only) -----
+      call tacvar_prepare(int(niter, kind=8))
+!----- end TacVar -----
       call timer_clear( 1 )
       call timer_start( 1 )
 
@@ -308,6 +311,9 @@
 !---------------------------------------------------------------------
       do it = 1, niter
 
+!----- TacVar: per-step timing (no workload change) -----
+         call tacvar_step_start()
+!----- end TacVar -----
 !---------------------------------------------------------------------
 !  The call to the conjugate gradient routine:
 !---------------------------------------------------------------------
@@ -370,6 +376,9 @@
             x(j) = norm_temp1(2)*z(j)    
          enddo                           
 
+!----- TacVar -----
+         call tacvar_step_stop()
+!----- end TacVar -----
 
       enddo                              ! end of main iter inv pow meth
 

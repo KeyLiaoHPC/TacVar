@@ -124,6 +124,9 @@
       end do
       call MPI_Barrier(comm_solve, ierr)
 
+!----- TacVar: reserve event buffer (instrumentation only) -----
+      call tacvar_prepare(int(niter, kind=8))
+!----- end TacVar -----
       call timer_start(T_total)
       if (timers_enabled) call timer_start(T_setup)
 
@@ -140,6 +143,9 @@
       if (timers_enabled) call timer_stop(T_fft)
 
       do iter = 1, niter
+!----- TacVar: per-step timing (no workload change) -----
+         call tacvar_step_start()
+!----- end TacVar -----
          if (timers_enabled) call timer_start(T_evolve)
          call evolve(u0, u1, twiddle,  &
      &               dims(1,1), dims(2,1), dims(3,1))
@@ -151,6 +157,9 @@
          if (timers_enabled) call timer_start(T_checksum)
          call checksum(iter, u2, dims(1,1), dims(2,1), dims(3,1))
          if (timers_enabled) call timer_stop(T_checksum)
+!----- TacVar -----
+         call tacvar_step_stop()
+!----- end TacVar -----
       end do
 
       call verify(niter, verified, class)

@@ -157,6 +157,9 @@
          call timer_clear(i)
       end do
       call mpi_barrier(comm_solve, ierr)
+!----- TacVar: reserve event buffer (instrumentation only) -----
+      call tacvar_prepare(int(np, kind=8))
+!----- end TacVar -----
       call timer_start(1)
 
       t1 = a
@@ -191,6 +194,9 @@
       endif
 
       do 150 k = 1, np
+!----- TacVar: per-step timing (no workload change) -----
+         call tacvar_step_start()
+!----- end TacVar -----
          kk = k_offset + k 
          t1 = s
          t2 = an
@@ -234,6 +240,10 @@
  140     continue
 
          if (timers_enabled) call timer_stop(t_gpairs)
+
+!----- TacVar -----
+         call tacvar_step_stop()
+!----- end TacVar -----
 
  150  continue
 

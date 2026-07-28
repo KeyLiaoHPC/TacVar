@@ -34,6 +34,7 @@ PAPI_HOME      ?= /home/hpckey/01-App/papi-7.1.0
 TACVAR_EXTRA_LIBS ?=
 TACVAR_CFLAGS = -D_GNU_SOURCE -I$(TACVAR_ROOT)/include -I$(TACVAR_OUTDIR) -I$(COMMON) \
 	-I$(TACVAR_ROOT)/timers -I$(TACVAR_ROOT)/counters -I$(TACVAR_ROOT) \
+	-I$(PAPI_HOME)/include \
 	-DTACVAR_HAS_GENERATED_CONFIG -include $(TACVAR_GEN_H)
 
 ${COMMON}/${RAND}.o: ${COMMON}/${RAND}.f90 ../config/make.def

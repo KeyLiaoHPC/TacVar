@@ -123,7 +123,17 @@ TACVAR_COUNTER_BACKEND=none
 TACVAR_COUNTER_COUNT=0           # must match number of names
 TACVAR_COUNTER_NAMES=            # comma-separated, e.g. cpu-cycles,instructions
 TACVAR_OUTPUT_ROOT=.             # CSV root relative to benchmark cwd
+TACVAR_ENABLE_PER_STEP_TIMING=0  # NPB-MPI: 0=whole-kernel only; 1=+major-loop steps
 ```
+
+`TACVAR_ENABLE_PER_STEP_TIMING` is independent of NPB’s `NPB_TIMER_FLAG` / `timer.flag`. Native NPB detail timers still update NPB’s accumulated report when that flag is set, but they are **not** written to TacVar event CSVs. TacVar records:
+
+| Switch | Event CSV contents |
+|--------|--------------------|
+| `0` | One whole-kernel interval per participating rank (`region_id` = NPB total slot, or `0` for DT’s all-rank total) |
+| `1` | That total plus each major outer-loop iteration/batch as `region_id=1000` (`TACVAR_REGION_STEP`) |
+
+Major-loop meanings (switch `1`): MG V-cycle+resid; CG inverse-power iteration; SP/BT/LU one timestep; FT evolve+iFFT+checksum; IS one `rank()` pass; EP one local random batch (reserves rank-local `np`); DT one owned Source/Comparator/Sink body (idle ranks reserve 0 steps). Enabling switch `1` adds timer/counter overhead inside NPB’s official total; switch `0` is the whole-kernel baseline.
 
 Change conf → **rebuild** the suite. Runtime does not switch backends. Invalid consumer/arch combinations are rejected by `src/measure/tools/gen_config.py`.
 
@@ -159,20 +169,23 @@ make -C src/measure CONF=suites/lmbench/tacvar.conf CONSUMER=lmbench \
 
 ### 3.5 CSV output
 
-Each run creates **one** `data_YYYYMMDDTHHmmss/` under the benchmark cwd (`TACVAR_OUTPUT_ROOT`). Override with `TACVAR_DATA_DIR` to reuse an existing directory (e.g. after fork/exec). Writers (rank / process / thread) get separate files:
+Each run creates **one** `data_YYYYMMDDTHHmmss/` under the benchmark cwd (`TACVAR_OUTPUT_ROOT`). Override with `TACVAR_DATA_DIR` to reuse an existing directory (e.g. after fork/exec). The directory may be created at `tacvar_init()` so MPI ranks agree on one path, but **event and metadata CSV files are created only during `tacvar_fini()`**. Rows are buffered in memory (NPB-MPI pre-reserves exact capacity before timing; NPB-OMP/lmbench grow geometrically). Abnormal termination therefore loses buffered events. A forked child discards its inherited buffer without flushing the parent’s events.
+
+Writers (rank / process / thread) get separate files:
 
 ```text
 <data_dir>/<suite>_<benchmark>_<class>_rRRRR_tTTTT_pPID.csv
+<data_dir>/region_info.csv          # rank/thread 0 only (NPB-MPI)
 ```
 
-Example: `npb-mpi_is_S_r0000_t0000_p12345.csv`. Opened in append mode; header is written once on the first row.
+Example: `npb-mpi_is_S_r0000_t0000_p12345.csv`.
 
-**Base header** (always present; comma-separated, no quoting):
+**Base header** (always present; comma-separated):
 
 ```text
 seq,suite,benchmark,class,test_tag,region_id,timer,
 raw_start,raw_stop,elapsed_ns,rank,thread,pid,cpu_start,cpu_stop,
-migrated,valid
+migrated,valid,source
 ```
 
 | Column | Type | Meaning |
@@ -182,7 +195,7 @@ migrated,valid
 | `benchmark` | string | e.g. `is`, `cg`, `lat_syscall` |
 | `class` | string | NPB class letter (`S`…`E`); often `X` / empty for lmbench |
 | `test_tag` | string | Optional sub-test label (may be empty) |
-| `region_id` | int | Timed region index (NPB timer slot, or 0 for lmbench) |
+| `region_id` | int | Timed region (`1000` = NPB major-loop step; else NPB total / lmbench) |
 | `timer` | string | Build-time timer name (`TACVAR_TIMER`) |
 | `raw_start` / `raw_stop` | uint64 | Backend-native tick / timestamp at begin/end |
 | `elapsed_ns` | int64 | Duration in nanoseconds (`TACVAR_TIMER_DELTA_NS`); always ≥ 0 |
@@ -192,11 +205,20 @@ migrated,valid
 | `cpu_start` / `cpu_stop` | int | `sched_getcpu()` at begin/end; −1 if unavailable |
 | `migrated` | 0/1 | 1 if both CPUs known and `cpu_start != cpu_stop` |
 | `valid` | 0/1 | 0 when migrated (asm counters unsafe across cores); else 1 |
+| `source` | string | Optional caller source tag |
+
+**`region_info.csv`** (NPB-MPI, once per run on rank 0) documents every logical NPB region, including legacy detail timers not recorded by TacVar:
+
+```text
+suite,benchmark,class,test_tag,region_id,region_name,source_locations,description,active_when,recorded_by_tacvar
+```
+
+`source_locations` is semicolon-separated `file:routine:start-end` when one logical region has multiple call sites. Total rows use `recorded_by_tacvar=1`; detail rows use `0` with `active_when=NPB_TIMER_FLAG`; step rows use `active_when=TACVAR_ENABLE_PER_STEP_TIMING=1`.
 
 **Counter columns** (only when `TACVAR_COUNTER_COUNT > 0`):
 
 ```text
-...,valid,counter_backend,<name>_start,<name>_stop,<name>_delta[,...]
+...,valid,source,counter_backend,<name>_start,<name>_stop,<name>_delta[,...]
 ```
 
 - `counter_backend` — build-time backend (`perf_event_open`, `papi_read`, `asm`).
@@ -211,40 +233,45 @@ seq,suite,benchmark,class,test_tag,region_id,timer,raw_start,raw_stop,elapsed_ns
 
 Notes:
 
-- One row per start/stop interval; written outside the timed region (buffered, ~64 KiB).
+- One row per start/stop interval; appended to an in-memory buffer outside the timed region and flushed at `tacvar_fini()`.
 - Prefer binding (`mpirun --bind-to core`, `OMP_PROC_BIND`, `taskset`) so `migrated` stays 0 for asm counters.
-- With `TACVAR_COUNTER_BACKEND=none`, the file stops at `valid` (no `counter_backend` column).
+- With `TACVAR_COUNTER_BACKEND=none`, the file stops at `source` (no `counter_backend` column).
+- EP Class large runs reserve `1+np` events before timing; allocation failure aborts via `MPI_Abort` before the timed region. DT distinguishes BH/WH/SH via `test_tag`.
 
 ### 3.6 Subject-code boundary
 
-**Unchanged:** NPB benchmark kernels (BT/CG/…), lmbench `lat_*` / `bw_*` kernels and `bench.h` body logic.
+**Unchanged:** NPB computational / MPI / OpenMP workload statements inside kernels (BT/CG/…), lmbench `lat_*` / `bw_*` kernels and `bench.h` body logic. NPB-MPI major loops may wrap unchanged bodies with `tacvar_prepare` / `tacvar_step_*` only.
 
-**Allowed adapters only:** NPB `common/c_timers.c`, `common/timers.f90`, `common/tacvar_npb.*`; lmbench `lib_timing.c` boundaries, `tacvar_lmbench.*`; suite Makefiles / `scripts/build`; `src/measure/**`.
+**Allowed adapters only:** NPB `common/c_timers.c`, `common/timers.f90`, `common/tacvar_npb.*`, `common/tacvar_npb_regions.*`; lmbench `lib_timing.c` boundaries, `tacvar_lmbench.*`; suite Makefiles / `scripts/build`; `src/measure/**`.
 
-Protected-path list for tests: `src/measure/tests/protected_sources.txt`.
+Protected-path list for tests: `src/measure/tests/protected_sources.txt`. Workload hash guard: `src/measure/tests/check_npb_workload.py`.
 
 ### 3.7 Test scripts
 
 ```bash
-# Unit / mock (config validation, TSC join, wrap delta, CSV schema)
+# Unit / mock (config, deferred buffer, fork, region_info, workload guard)
 bash src/measure/tests/run_unit_tests.sh
 
 # Build every legal timer/counter for this arch (temp conf; does not edit suite confs)
 bash src/measure/tests/run_backend_smoke.sh
 
-# NPB: --build-only | --run-smoke  (CG Class S OMP<=4, IS Class S MPI np=4)
+# NPB: --build-only | --run-smoke
+# Smoke includes OMP CG S, MPI IS S, plus MG/CG per-step (switch 0/1) with PAPI_TOT_CYC,PAPI_TOT_INS
 bash suites/NPB3.4.4/test_tacvar.sh --run-smoke
+
+# Pairwise NPB-MPI timer×reader matrix on MG Class S (PASS/SKIP/FAIL)
+bash suites/NPB3.4.4/test_npb_backend_matrix.sh
 
 # lmbench: lat_syscall null on one core; optional platform combo
 bash suites/lmbench/scripts/test_tacvar.sh --run-smoke
 
-# ARM host smoke (needs MPI/PAPI/kmod on that machine)
+# ARM host smoke (needs MPI/PAPI/kmod on that machine; uses PAPI_HOME=/home/hpckey/01-App/papi)
 bash src/measure/tests/run_arm_tests.sh
 ```
 
-x86 smoke matrix (scripted): `native+none` for all three suites; then lmbench `tsc_asym+asm`, NPB-OMP `clock_gettime+perf_event_open`, NPB-MPI `mpi_wtime+papi_read`. ARM: `native+none`, then lmbench `cntvct_el0+perf_event_open`, NPB-OMP `cntvct_el0_dmb+asm`, NPB-MPI `mpi_wtime+perf_event_open` (set `TACVAR_NSTP` / `TACVAR_NSTP_ARM` to ns per CNTVCT tick from `CNTFRQ_EL0`). If PAPI’s HW component is unavailable on a platform, use `perf_event_open` or `asm` instead of `papi_read`; `papi_get_real_nsec` may still build.
+x86 smoke matrix (scripted): `native+none` for all three suites; then lmbench `tsc_asym+asm`, NPB-OMP `clock_gettime+perf_event_open`, NPB-MPI `mpi_wtime+papi_read`. ARM: `native+none`, then lmbench `cntvct_el0+perf_event_open`, NPB-OMP `cntvct_el0_dmb+asm`, NPB-MPI `mpi_wtime+perf_event_open` (set `TACVAR_NSTP` / `TACVAR_NSTP_ARM` to ns per CNTVCT tick from `CNTFRQ_EL0`). Pairwise backend matrix covers every supported timer and reader at least once (not Cartesian); host permission / event-availability failures are `SKIP`, while compile/crash/malformed/zero-counter-after-init/verification failures are `FAIL`. If PAPI’s HW component is unavailable on a platform, use `perf_event_open` or `asm` instead of `papi_read`; `papi_get_real_nsec` may still build.
 
-Acceptance: exit 0; NPB `Verification = SUCCESSFUL`; lmbench prints a syscall latency; CSV present with matching timer/counter names; protected sources unchanged.
+Acceptance: exit 0; NPB `Verification = SUCCESSFUL`; lmbench prints a syscall latency; CSV present with matching timer/counter names; with switch `1`, MG Class S has 4 step rows/rank and CG Class S has 15; `region_info.csv` present; protected sources unchanged.
 
 ### 3.8 Manual run examples
 

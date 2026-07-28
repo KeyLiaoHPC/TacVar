@@ -185,7 +185,7 @@ uint64_t tacvar_lmbench_stop(struct timeval *begin, struct timeval *end)
 #else
                             NULL, NULL, NULL
 #endif
-                            );
+                            , NULL);
 
     if (elapsed_ns < 0)
         elapsed_ns = 0;

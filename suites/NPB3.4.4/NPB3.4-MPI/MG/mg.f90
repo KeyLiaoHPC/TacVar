@@ -269,6 +269,9 @@
       end do
       call mpi_barrier(comm_work,ierr)
 
+!----- TacVar: reserve event buffer (instrumentation only) -----
+      call tacvar_prepare(int(nit, kind=8))
+!----- end TacVar -----
       call timer_start(T_bench)
 
       call resid(u,v,r,n1,n2,n3,a,k)
@@ -281,8 +284,14 @@
             if (me .eq. root) write(*,80) it
    80       format('  iter ',i4)
          endif
+!----- TacVar: per-step timing (no workload change) -----
+         call tacvar_step_start()
+!----- end TacVar -----
          call mg3P(u,v,r,a,c,n1,n2,n3,k)
          call resid(u,v,r,n1,n2,n3,a,k)
+!----- TacVar -----
+         call tacvar_step_stop()
+!----- end TacVar -----
       enddo
 
 

@@ -121,12 +121,28 @@ def resolve_native(timer: str, consumer: str) -> str:
     raise SystemExit(f"native timer unsupported for consumer {consumer}")
 
 
-def validate(cfg: dict[str, str], consumer: str, arch: str) -> tuple[str, str, list[str], int, int]:
+def load_per_step_switch(cfg: dict[str, str]) -> int:
+    raw = cfg.get("TACVAR_ENABLE_PER_STEP_TIMING", "0")
+    if raw is None or str(raw).strip() == "":
+        raise SystemExit("TACVAR_ENABLE_PER_STEP_TIMING must be 0 or 1")
+    try:
+        value = int(str(raw).strip())
+    except ValueError as exc:
+        raise SystemExit("TACVAR_ENABLE_PER_STEP_TIMING must be 0 or 1") from exc
+    if value not in (0, 1):
+        raise SystemExit("TACVAR_ENABLE_PER_STEP_TIMING must be 0 or 1")
+    return value
+
+
+def validate(
+    cfg: dict[str, str], consumer: str, arch: str
+) -> tuple[str, str, list[str], int, int, int]:
     timer = cfg.get("TACVAR_TIMER", "native")
     counter = cfg.get("TACVAR_COUNTER_BACKEND", "none")
     names = split_names(cfg.get("TACVAR_COUNTER_NAMES", ""))
     nstp = int(cfg.get("TACVAR_NSTP", "0") or "0")
     count = int(cfg.get("TACVAR_COUNTER_COUNT", str(len(names))) or "0")
+    per_step = load_per_step_switch(cfg)
 
     if timer not in TIMERS_ALL:
         raise SystemExit(f"unknown TACVAR_TIMER={timer}")
@@ -166,7 +182,7 @@ def validate(cfg: dict[str, str], consumer: str, arch: str) -> tuple[str, str, l
     if counter == "asm" and arch not in ("x86_64", "aarch64"):
         raise SystemExit("asm counters require x86_64 or aarch64")
 
-    return timer, counter, names, count, nstp
+    return timer, counter, names, count, nstp, per_step
 
 
 def emit_header(
@@ -180,6 +196,7 @@ def emit_header(
     nstp: int,
     output_root: str,
     measure_root: Path,
+    per_step: int,
 ) -> None:
     resolved = resolve_native(timer, consumer)
     prefix = TIMER_PREFIX[timer if timer == "native" else resolved]
@@ -221,6 +238,8 @@ def emit_header(
         f'#define TACVAR_COUNTER_BACKEND_NAME "{counter}"',
         f"#define TACVAR_COUNTER_COUNT {count}",
         f"#define TACVAR_NSTP {nstp}",
+        f"#define TACVAR_ENABLE_PER_STEP_TIMING {per_step}",
+        f"#define TACVAR_REGION_STEP 1000",
         f'#define TACVAR_OUTPUT_ROOT_DEFAULT "{output_root}"',
         "",
     ]
@@ -340,7 +359,7 @@ def main() -> None:
 
     cfg = parse_conf(conf)
     arch = detect_arch(args.compiler)
-    timer, counter, names, count, nstp = validate(cfg, args.consumer, arch)
+    timer, counter, names, count, nstp, per_step = validate(cfg, args.consumer, arch)
     output_root = cfg.get("TACVAR_OUTPUT_ROOT", ".")
 
     # PAPI path required when selected
@@ -360,6 +379,7 @@ def main() -> None:
         nstp,
         output_root,
         measure_root,
+        per_step,
     )
     emit_mk(
         outdir / "tacvar_generated_config.mk",

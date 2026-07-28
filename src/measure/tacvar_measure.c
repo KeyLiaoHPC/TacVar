@@ -75,12 +75,23 @@ int tacvar_init(const tacvar_context_t *ctx)
         return 0;
 
     if (g_tacvar.initialized && g_tacvar.owner_pid != pid) {
-        /* Inherited FILE* after fork — do not flush parent buffers. */
+        /* Inherited state after fork — discard without flushing parent. */
         g_tacvar.csv_fp = NULL;
+        g_tacvar.events = NULL;
+        g_tacvar.event_count = 0;
+        g_tacvar.event_capacity = 0;
         g_tacvar.initialized = 0;
 #ifdef TACVAR_HAS_GENERATED_CONFIG
         TACVAR_COUNTER_FINI();
 #endif
+    }
+
+    /* Leftover buffer from a prior failed flush in this process. */
+    if (!g_tacvar.initialized && g_tacvar.events != NULL) {
+        free(g_tacvar.events);
+        g_tacvar.events = NULL;
+        g_tacvar.event_count = 0;
+        g_tacvar.event_capacity = 0;
     }
 
     memset(&g_tacvar, 0, sizeof(g_tacvar));
@@ -129,7 +140,8 @@ void tacvar_fini(void)
         return;
     if (g_tacvar.owner_pid != getpid())
         return;
-    tacvar_csv_close(&g_tacvar);
+    (void)tacvar_region_info_write();
+    (void)tacvar_csv_close(&g_tacvar);
 #ifdef TACVAR_HAS_GENERATED_CONFIG
     TACVAR_COUNTER_FINI();
     TACVAR_TIMER_FINI();

@@ -629,6 +629,9 @@ int ProcessNodes(DGraph *dg,int me){
   for(i=0;i<dg->numNodes;i++){
     nd=dg->node[i];
     if(nd->address!=me) continue;
+    /*----- TacVar: per-step timing (no workload change) -----*/
+    tacvar_npb_step_start();
+    /*----- end TacVar -----*/
     if(strstr(nd->name,"Source")){
       nd->feat=RandomFeatures(dg->name,fielddim,nd->id); 
       SendResults(dg,nd,nd->feat);
@@ -640,6 +643,9 @@ int ProcessNodes(DGraph *dg,int me){
       feat=CombineStreams(dg,nd);
       SendResults(dg,nd,feat);
     }
+    /*----- TacVar -----*/
+    tacvar_npb_step_stop();
+    /*----- end TacVar -----*/
   }
   if(me==0){ /* Report node */
     rchksum=0.0;
@@ -710,13 +716,29 @@ int main(int argc,char **argv ){
     for(i=0;i<dg->numNodes;i++){ 
       dg->node[i]->address=i;
     }
+    /*----- TacVar: tag + reserve (1 total + 0/1 step) -----*/
+    if(argc > 1)
+      tacvar_npb_set_test_tag(argv[1]);
+    {
+      uint64_t steps = 0;
+      for(i=0;i<dg->numNodes;i++)
+        if(dg->node[i]->address==my_rank) steps++;
+      tacvar_npb_prepare(steps);
+    }
+    /*----- end TacVar -----*/
     if( my_rank == 0 ){
       printf( "\n\n NAS Parallel Benchmarks 3.4 -- DT Benchmark\n\n" );
       graphShow(dg,0);
       timer_clear(0);
       timer_start(0);
     }
+    /*----- TacVar: all-rank whole-kernel interval -----*/
+    tacvar_npb_kernel_start();
+    /*----- end TacVar -----*/
     verified=ProcessNodes(dg,my_rank);
+    /*----- TacVar -----*/
+    tacvar_npb_kernel_stop();
+    /*----- end TacVar -----*/
     
     featnum=NUM_SAMPLES*fielddim;
     bytes_sent=featnum*dg->numArcs;

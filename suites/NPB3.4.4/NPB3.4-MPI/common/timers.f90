@@ -1,6 +1,5 @@
 !---------------------------------------------------------------------
 ! NPB-MPI Fortran timers — bind(C) to tacvar_npb_* (shared with C path).
-! Benchmark sources unchanged; only this common timer layer is hooked.
 !---------------------------------------------------------------------
 
       module tacvar_npb_c
@@ -24,6 +23,19 @@
             integer(c_int), value :: n
             real(c_double) :: tacvar_npb_timer_read
           end function
+          subroutine tacvar_npb_prepare(expected_steps)  &
+     &         bind(C, name="tacvar_npb_prepare")
+            import :: c_int64_t
+            integer(c_int64_t), value :: expected_steps
+          end subroutine
+          subroutine tacvar_npb_step_start() bind(C, name="tacvar_npb_step_start")
+          end subroutine
+          subroutine tacvar_npb_step_stop() bind(C, name="tacvar_npb_step_stop")
+          end subroutine
+          subroutine tacvar_npb_kernel_start() bind(C, name="tacvar_npb_kernel_start")
+          end subroutine
+          subroutine tacvar_npb_kernel_stop() bind(C, name="tacvar_npb_kernel_stop")
+          end subroutine
         end interface
       end module tacvar_npb_c
 
@@ -60,6 +72,32 @@
       implicit none
       integer n
       timer_read = tacvar_npb_timer_read(int(n, kind=c_int))
+      return
+      end
+
+!---------------------------------------------------------------------
+! TacVar step helpers (instrumentation only; no workload change)
+!---------------------------------------------------------------------
+      subroutine tacvar_prepare(expected_steps)
+      use tacvar_npb_c
+      use, intrinsic :: iso_c_binding, only: c_int64_t
+      implicit none
+      integer(kind=8) expected_steps
+      call tacvar_npb_prepare(int(expected_steps, kind=c_int64_t))
+      return
+      end
+
+      subroutine tacvar_step_start()
+      use tacvar_npb_c
+      implicit none
+      call tacvar_npb_step_start()
+      return
+      end
+
+      subroutine tacvar_step_stop()
+      use tacvar_npb_c
+      implicit none
+      call tacvar_npb_step_stop()
       return
       end
 

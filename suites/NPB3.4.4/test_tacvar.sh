@@ -13,8 +13,8 @@ export PATH="${MPI_HOME:-/home/hpckey/01-App/openmpi-5.0.7}/bin:${PATH}"
 export LD_LIBRARY_PATH="${MPI_HOME:-/home/hpckey/01-App/openmpi-5.0.7}/lib:${PAPI_HOME:-/home/hpckey/01-App/papi-7.1.0}/lib:${LD_LIBRARY_PATH:-}"
 if [[ "$ARCH" == "aarch64" ]]; then
   export PATH="/home/hpckey/01-App/openmpi-5.0.8/bin:${PATH}"
-  export LD_LIBRARY_PATH="/home/hpckey/01-App/openmpi-5.0.8/lib:/home/hpckey/01-App/papi-7.2.0b2/lib:${LD_LIBRARY_PATH:-}"
-  export PAPI_HOME="${PAPI_HOME:-/home/hpckey/01-App/papi-7.2.0b2}"
+  export LD_LIBRARY_PATH="/home/hpckey/01-App/openmpi-5.0.8/lib:/home/hpckey/01-App/papi/lib:${LD_LIBRARY_PATH:-}"
+  export PAPI_HOME="${PAPI_HOME:-/home/hpckey/01-App/papi}"
   export MPI_HOME="${MPI_HOME:-/home/hpckey/01-App/openmpi-5.0.8}"
 else
   export PAPI_HOME="${PAPI_HOME:-/home/hpckey/01-App/papi-7.1.0}"
@@ -62,8 +62,8 @@ check_csv_dir() {
   dir=$(ls -dt "$cwd"/data_????????T?????? 2>/dev/null | head -1 || true)
   [[ -n "$dir" ]] || { echo "ERROR: no data_* under $cwd"; exit 1; }
   local csvs
-  mapfile -t csvs < <(find "$dir" -name '*.csv' | sort)
-  [[ ${#csvs[@]} -ge 1 ]] || { echo "ERROR: no CSV in $dir"; exit 1; }
+  mapfile -t csvs < <(find "$dir" -name '*.csv' ! -name 'region_info.csv' | sort)
+  [[ ${#csvs[@]} -ge 1 ]] || { echo "ERROR: no event CSV in $dir"; exit 1; }
   local hdr
   hdr=$(head -1 "${csvs[0]}")
   echo "$hdr" | grep -q 'elapsed_ns' || { echo "ERROR: bad CSV header"; exit 1; }
@@ -79,8 +79,53 @@ check_csv_dir() {
   echo "CSV OK: $dir (${#csvs[@]} files)"
 }
 
+check_per_step_mg_cg() {
+  local cwd="$1"
+  local dir steps region_info
+  dir=$(ls -dt "$cwd"/data_????????T?????? 2>/dev/null | head -1 || true)
+  [[ -n "$dir" ]] || { echo "ERROR: no data_* under $cwd"; exit 1; }
+  region_info="$dir/region_info.csv"
+  [[ -f "$region_info" ]] || { echo "ERROR: missing region_info.csv"; exit 1; }
+  grep -q ',1000,' "$region_info" || { echo "ERROR: region_info missing step region 1000"; exit 1; }
+  # Each rank event file must have exactly expect_steps rows with region_id=1000
+  local csv
+  for csv in "$dir"/npb-mpi_*.csv; do
+    [[ -f "$csv" ]] || continue
+    [[ "$(basename "$csv")" == region_info.csv ]] && continue
+    steps=$(awk -F, 'NR>1 && $6+0==1000 {n++} END{print n+0}' "$csv")
+    local bench
+    bench=$(awk -F, 'NR==2 {print $3; exit}' "$csv")
+    local expect=0
+    case "$bench" in
+      mg) expect=4 ;;
+      cg) expect=15 ;;
+      *) echo "ERROR: unexpected bench $bench in $csv"; exit 1 ;;
+    esac
+    [[ "$steps" == "$expect" ]] || {
+      echo "ERROR: $csv has $steps step rows, expect $expect"
+      exit 1
+    }
+    # require two counter delta columns present and some non-zero
+    local hdr
+    hdr=$(head -1 "$csv")
+    echo "$hdr" | grep -q '_delta' || { echo "ERROR: missing counter deltas in $csv"; exit 1; }
+    awk -F, -v nsteps="$expect" '
+      NR==1 {
+        for(i=1;i<=NF;i++) if($i ~ /_delta$/) d[++nd]=i
+        next
+      }
+      $6+0==1000 {
+        for(j=1;j<=nd;j++) if($(d[j])+0 != 0) nz=1
+      }
+      END { exit (nd>=2 && nz) ? 0 : 1 }
+    ' "$csv" || { echo "ERROR: need >=2 counter deltas with non-zero step values in $csv"; exit 1; }
+  done
+  echo "per-step OK: $dir"
+}
+
 apply_temp_conf() {
   local suite_dir="$1" timer="$2" counter="$3" names="$4" count="$5" nstp="$6"
+  local per_step="${7:-0}"
   local bak="$suite_dir/tacvar.conf.smoke.bak"
   cp "$suite_dir/tacvar.conf" "$bak"
   cat > "$suite_dir/tacvar.conf" <<EOF
@@ -90,6 +135,7 @@ TACVAR_COUNTER_BACKEND=$counter
 TACVAR_COUNTER_COUNT=$count
 TACVAR_COUNTER_NAMES=$names
 TACVAR_OUTPUT_ROOT=.
+TACVAR_ENABLE_PER_STEP_TIMING=$per_step
 EOF
   echo "$bak"
 }
@@ -163,10 +209,63 @@ grep -q 'Verification.*=.*SUCCESSFUL' /tmp/npb_omp_smoke.out
 check_csv_dir "$ROOT/NPB3.4-OMP"
 
 echo "=== NPB-MPI smoke: IS Class S, np=4 ==="
+# Default suite conf uses PAPI_L2/L3_TCM (x86-oriented). On ARM those events are
+# often unavailable; force a portable backend for the baseline IS smoke.
+if [[ "$ARCH" == "aarch64" ]]; then
+  bak=$(apply_temp_conf "$ROOT/NPB3.4-MPI" native perf_event_open "cpu-cycles,instructions" 2 0 0)
+  trap 'restore_conf "'"$bak"'"; force_rebuild_measure "'"$ROOT/NPB3.4-MPI"'"; rm -f '"$SNAPSHOT" EXIT
+  force_rebuild_measure "$ROOT/NPB3.4-MPI"
+  (cd "$ROOT/NPB3.4-MPI" && make clean >/dev/null 2>&1 || true; make IS CLASS=S)
+fi
 rm -rf "$ROOT/NPB3.4-MPI"/data_????????T??????
 ( cd "$ROOT/NPB3.4-MPI" && mpirun -np 4 --bind-to core ./bin/is.S.x ) | tee /tmp/npb_mpi_smoke.out
 grep -q 'SUCCESSFUL' /tmp/npb_mpi_smoke.out
 check_csv_dir "$ROOT/NPB3.4-MPI" 4
+if [[ "$ARCH" == "aarch64" ]]; then
+  restore_conf "$bak"
+  force_rebuild_measure "$ROOT/NPB3.4-MPI"
+  trap 'rm -f '"$SNAPSHOT" EXIT
+fi
+
+echo "=== NPB-MPI per-step: MG+CG Class S (ENABLE_PER_STEP_TIMING=1) ==="
+if [[ "$ARCH" == "aarch64" ]]; then
+  bak=$(apply_temp_conf "$ROOT/NPB3.4-MPI" native perf_event_open "cpu-cycles,instructions" 2 0 1)
+else
+  bak=$(apply_temp_conf "$ROOT/NPB3.4-MPI" native papi_read "PAPI_TOT_CYC,PAPI_TOT_INS" 2 0 1)
+fi
+trap 'restore_conf "'"$bak"'"; force_rebuild_measure "'"$ROOT/NPB3.4-MPI"'"; rm -f '"$SNAPSHOT" EXIT
+force_rebuild_measure "$ROOT/NPB3.4-MPI"
+(cd "$ROOT/NPB3.4-MPI" && make clean >/dev/null 2>&1 || true; make MG CLASS=S && make CG CLASS=S)
+rm -rf "$ROOT/NPB3.4-MPI"/data_????????T??????
+( cd "$ROOT/NPB3.4-MPI" && mpirun -np 4 --bind-to core ./bin/mg.S.x ) | tee /tmp/npb_mpi_mg_step.out
+grep -q 'VERIFICATION SUCCESSFUL\|Verification.*=.*SUCCESSFUL\|SUCCESSFUL' /tmp/npb_mpi_mg_step.out
+check_csv_dir "$ROOT/NPB3.4-MPI" 4
+check_per_step_mg_cg "$ROOT/NPB3.4-MPI"
+rm -rf "$ROOT/NPB3.4-MPI"/data_????????T??????
+( cd "$ROOT/NPB3.4-MPI" && mpirun -np 4 --bind-to core ./bin/cg.S.x ) | tee /tmp/npb_mpi_cg_step.out
+grep -q 'VERIFICATION SUCCESSFUL\|Verification.*=.*SUCCESSFUL\|SUCCESSFUL' /tmp/npb_mpi_cg_step.out
+check_csv_dir "$ROOT/NPB3.4-MPI" 4
+check_per_step_mg_cg "$ROOT/NPB3.4-MPI"
+
+echo "=== NPB-MPI per-step OFF regression (ENABLE_PER_STEP_TIMING=0) ==="
+restore_conf "$bak"
+if [[ "$ARCH" == "aarch64" ]]; then
+  bak=$(apply_temp_conf "$ROOT/NPB3.4-MPI" native perf_event_open "cpu-cycles,instructions" 2 0 0)
+else
+  bak=$(apply_temp_conf "$ROOT/NPB3.4-MPI" native papi_read "PAPI_TOT_CYC,PAPI_TOT_INS" 2 0 0)
+fi
+force_rebuild_measure "$ROOT/NPB3.4-MPI"
+(cd "$ROOT/NPB3.4-MPI" && make clean >/dev/null 2>&1 || true; make MG CLASS=S)
+rm -rf "$ROOT/NPB3.4-MPI"/data_????????T??????
+( cd "$ROOT/NPB3.4-MPI" && mpirun -np 4 --bind-to core ./bin/mg.S.x ) | tee /tmp/npb_mpi_mg_nostep.out
+grep -q 'SUCCESSFUL' /tmp/npb_mpi_mg_nostep.out
+dir=$(ls -dt "$ROOT/NPB3.4-MPI"/data_????????T?????? | head -1)
+steps=$(awk -F, 'NR>1 && $6+0==1000 {n++} END{print n+0}' "$dir"/npb-mpi_mg_*.csv)
+[[ "$steps" == "0" ]] || { echo "ERROR: expected 0 step rows with switch=0, got $steps"; exit 1; }
+echo "per-step OFF OK"
+restore_conf "$bak"
+force_rebuild_measure "$ROOT/NPB3.4-MPI"
+trap 'rm -f '"$SNAPSHOT" EXIT
 
 # Platform-specific extra combo (rebuild with temp conf, then restore)
 if [[ "$ARCH" == "x86_64" ]]; then
