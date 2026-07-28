@@ -87,3 +87,27 @@ suites/lmbench/bin/
 suites/lmbench/data_*/
 suites/lmbench/**/tacvar_build/
 suites/lmbench/**/*.smoke.bak
+
+# Python / notebook intermediate files
+**/__pycache__/
+*.py[cod]
+**/.pytest_cache/
+**/.ipynb_checkpoints/
+
+# Local packaging metadata
+utils/scripts/*.egg-info/
+utils/scripts/build/
+utils/scripts/dist/
+
+# uv / plotting environments and caches
+utils/scripts/.venv/
+utils/scripts/.python-version
+utils/scripts/.uv-cache/
+utils/scripts/.mpl-cache/
+utils/scripts/.cache/
+
+# NPB-MPI generated campaign data and reports
+suites/NPB3.4.4/NPB3.4-MPI/results_*/
+
+# Temporary campaign backups (normally removed by EXIT traps)
+suites/NPB3.4.4/NPB3.4-MPI/tacvar.conf.*.bak

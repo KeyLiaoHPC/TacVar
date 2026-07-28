@@ -1,0 +1,16 @@
+# Human-readable environment description for NPB-MPI timer campaign analysis.
+# Create with: cd utils/scripts && uv sync
+name: npb-timer-campaign
+python: ">=3.10"
+dependencies:
+  - matplotlib>=3.8
+commands:
+  create: "cd utils/scripts && uv sync"
+  activate: "source utils/scripts/.venv/bin/activate"
+  run_hist: "python3 utils/scripts/plot_npb_mpi_step_histograms.py <results-dir>"
+  run_icdf: "python3 utils/scripts/plot_npb_mpi_step_icdf.py <results-dir>"
+  run_analyze: "python3 utils/scripts/analyze_npb_timer_campaign.py <results-dir>"
+notes:
+  - pyproject.toml and uv.lock are tracked for reproducibility.
+  - Local .venv/, caches, and NPB-MPI results_*/ trees are gitignored.
+  - Times New Roman must be available to matplotlib for publication plots.

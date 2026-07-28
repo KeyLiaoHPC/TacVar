@@ -66,3 +66,12 @@ Do not commit build artifacts (`.o`, `*.x`, `*.csv`, logs) — they are gitignor
 - ParTES: `src/partes/README.md`
 - Filter: `src/filter/README.md`
 - ParTES tools: `src/partes/tools/README.md`
+
+## NPB-MPI timer comparison 
+
+When the user requests an NPB-MPI timer/counter comparison (or analysis of a `results_*` tree):
+
+1. Follow [`SKILLS/test-npb-mpi-timer-comparison/SKILL.md`](SKILLS/test-npb-mpi-timer-comparison/SKILL.md) (under `SKILLS/`, not `.cursor/skills/`).
+2. Use reusable scripts and the importable package under [`utils/scripts/`](utils/scripts/) — see [`utils/scripts/README.md`](utils/scripts/README.md).
+3. Ask for missing hostname/cores/kernels/timers/events; do not invent campaign defaults.
+4. Generate pretest first; generate fulltest only after matching pretest PASS; do not hold long `mpirun` jobs in the agent session.

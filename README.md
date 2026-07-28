@@ -302,3 +302,34 @@ taskset -c 0 ./bin/$(cd src && ../scripts/os)/lat_syscall null
 | Wrong `bin/` OS dir for lmbench | Run `scripts/os` from `src/` so `gnu-os` is found |
 | `PAPI_add_event ... Component ... disabled` | PAPI HW component unavailable on this CPU; use `perf_event_open` or `asm` |
 | `setparams: cannot execute binary file` | NFS-shared x86/ARM objects; remove `sys/setparams` / `common/*.o` and rebuild on the current host |
+
+### 3.10 NPB-MPI timer/counter comparison
+
+For multi-timer × counter-profile experiments on **NPB-MPI only** (total NAS time, NPB detail timers, and TacVar per-step `region_id=1000` distributions), use the reusable environment under [`utils/scripts/`](utils/scripts/). Full commands, field tables, and troubleshooting live in [`utils/scripts/README.md`](utils/scripts/README.md). Agent workflow: [`SKILLS/test-npb-mpi-timer-comparison/SKILL.md`](SKILLS/test-npb-mpi-timer-comparison/SKILL.md).
+
+**Setup** (Python ≥3.10, matplotlib; Times New Roman preferred for publication figures):
+
+```bash
+cd utils/scripts
+uv sync
+source .venv/bin/activate
+```
+
+**Two-stage run** (explicit campaign fields only — no silent host/class/timer defaults):
+
+1. Freeze `campaign.json` and generate `00_pretest.sh` with `python3 generate_npb_timer_jobs.py init ...` (or `pretest --spec ...`).
+2. On the target host, run the pretest detached (`nohup bash 00_pretest.sh ...` or `./run_npb_mpi_pretest.sh <results-dir>`). Expect `preflight/STATUS=PASS` and matching digests.
+3. Only then generate and run `01_fulltest.sh` (`generate_npb_timer_jobs.py fulltest` / `run_npb_mpi_fulltest.sh`). Scripts restore `tacvar.conf` on exit and refuse conflicting same-user `mpirun` jobs without killing them.
+
+**Analyze / plot** an existing result tree (new `campaign.json` layouts or legacy `runs/<timer>_<profile>/<kernel>/`):
+
+```bash
+RESULTS=suites/NPB3.4.4/NPB3.4-MPI/results_<host>_class<C>_...
+
+python3 utils/scripts/plot_npb_mpi_step_histograms.py "$RESULTS"
+python3 utils/scripts/plot_npb_mpi_step_icdf.py "$RESULTS"
+python3 utils/scripts/analyze_npb_timer_campaign.py "$RESULTS"
+# writes summary/*.csv, summary/figures/*.{png,pdf,eps}, and REPORT.md
+```
+
+Notebook-style imports: `sys.path.insert(0, "utils/scripts")` then `from npb_timer_campaign import load_campaign, analyze_campaign, ...`. Use `--allow-font-fallback` only when Times New Roman is unavailable (recorded in the report). Generated `results_*/` trees and `utils/scripts/.venv/` are gitignored.
