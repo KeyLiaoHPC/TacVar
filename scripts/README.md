@@ -23,7 +23,7 @@ Measurement runs write:
 <data_root>/<kernel_name>.<kernel_class>/<short_host>_rRRRR_tTTTT_pPID.csv
 ```
 
-See root `README.md` §3.5 for the full column schema. Heatmaps use `region_id`, `loc_id`, `rank`, and the chosen figure-of-merit column (default `elapsed_ns`).
+See root `README.md` §3.5 for the full column schema. Heatmaps and distribution plots use `region_id`, `loc_id`, `rank`, and the chosen figure-of-merit column (default `elapsed_ns`).
 
 ## API: `tacvar_visual.draw_heatmap_npb_mpi`
 
@@ -136,3 +136,78 @@ Example for `bars=[a, b, c]` (after percent→ratio conversion):
 The bin that contains ratio `1.0` (zero deviation vs ref) is **always white**. Left of white: deep green → light green; right of white: light red → deep red.
 
 Default `bars=[-15, -5, -1, 1, 5, 15]` therefore uses **7 bins**, with white = `(-1%, 1%]`.
+
+## API: pooled distribution plots
+
+`draw_histogram_npb_mpi`, `draw_pdf_npb_mpi`, and `draw_cdf_npb_mpi` share the heatmap data path (`hosts`, `region_ids`, `loc_ids`, `fom`, `xrange`, `ref_section_base`, `ref_key`, `ref_base`, `bars`) and add `ranks`. One figure per `(region_id, loc_id)`. Selected ranks are **pooled** into a single sample set of `value / ref`; there are no per-rank series.
+
+- **X unit**: percent vs ref, `(value/ref - 1) * 100` (same quantity as the heatmap colorbar).
+- **Figure height**: 1024 pixels (`dpi=100`, height 10.24 in). Academic serif style.
+- **Prints**: `timer_info.csv` once, then rank count and data-point count per `(region_id, loc_id)` after `ranks` and `xrange`.
+
+Title pattern (`kind` is `histogram`, `pdf`, or `cdf`):
+
+```text
+{fom} {kind} of {Kernel.Class} on {host} (region={region_name}, loc_id={id})
+```
+
+Remaining arguments are **keyword-only**. After changing the module, re-run `importlib.reload` or restart the Jupyter kernel.
+
+```python
+import importlib
+import tacvar_visual as tvvis
+importlib.reload(tvvis)
+
+common = dict(
+    data_root="path/to/data_YYYYMMDDTHHmmss",
+    kernel_name="is",
+    kernel_class="S",
+    hosts=["all"],
+    region_ids=range(0),
+    loc_ids=range(0),
+    ranks=range(0),          # empty → all ranks
+    fom="elapsed_ns",
+    xrange=-1,
+    ref_section_base=True,
+    ref_key="median",
+    ref_base="all",
+    bars=[-15, -5, -1, 1, 5, 15],
+)
+hfigs = tvvis.draw_histogram_npb_mpi(**common)
+pfigs = tvvis.draw_pdf_npb_mpi(**common)
+cfigs = tvvis.draw_cdf_npb_mpi(**common)
+```
+
+| Argument | Default | Meaning |
+|----------|---------|---------|
+| `data_root` | (required) | Path to a `data_*` directory |
+| `kernel_name` | (required) | Benchmark name, e.g. `is`, `cg` |
+| `kernel_class` | (required) | NPB class letter, e.g. `S` |
+| `hosts` | `["all"]` | `["all"]` / `[""]` / empty → all hosts; otherwise match CSV `short_host` prefixes |
+| `region_ids` | `range(0)` | Region ids; empty iterable → all regions found |
+| `loc_ids` | `range(0)` | Loc ids; empty iterable → all loc_ids found; only pairs present in data are plotted |
+| `ranks` | `range(0)` | MPI ranks to pool; empty iterable → all ranks found |
+| `fom` | `"elapsed_ns"` | Numeric CSV column (`elapsed_ns` or a counter `*_delta`) |
+| `xrange` | `-1` | Sample columns to include (same rules as the heatmap) |
+| `ref_section_base` | `True` | If True, compute refs on the `xrange` window; if False, on all samples |
+| `ref_key` | `"median"` | Reference statistic for `value / ref` (same as heatmap) |
+| `ref_base` | `"all"` | How that sample set is aggregated: `all` / `x` / `y` (per cell, then pooled) |
+| `bars` | `[-15, -5, -1, 1, 5, 15]` | Percent-deviation cut points |
+
+Returns a `list` of `matplotlib.figure.Figure`. `xrange`, `ref_key`, `ref_section_base`, `ref_base`, and `bars` follow the heatmap sections above. `ref_base='y'` still forms per-rank refs for each cell, then those ratios are flattened.
+
+### `ranks`
+
+Empty iterable (`range(0)`, `[]`) means every rank present in the loaded CSVs. A non-empty list is intersected with available ranks (same `select_ids` behavior as `region_ids`). After that filter, all finite `value/ref` cells in the `xrange` window are flattened into one distribution.
+
+### Histogram (`draw_histogram_npb_mpi`)
+
+Discrete counts in the same `bars` bins as the heatmap (`len(bars)+1` after `±inf`). X tick labels are the ratio-edge labels (`-inf`, `-15%`, …, `+inf`). Bar faces use the green–white–red colormap; the bin containing 0% is white. Y = count.
+
+### PDF (`draw_pdf_npb_mpi`)
+
+One density histogram (`numpy.histogram(..., density=True)` + stairs) of percent-vs-ref over a finite x-range (data min/max, padded to include the finite `bars`). `bars` are dashed vertical guides; light GWR bands mark the same intervals as the heatmap. Y = probability density.
+
+### CDF (`draw_cdf_npb_mpi`)
+
+One empirical CDF of percent-vs-ref (`sort` + `arange(1, n+1)/n`, step). Same x-axis and `bars` guides as the PDF. Y in `[0, 1]`. A dotted horizontal line marks cumulative probability 0.5.
