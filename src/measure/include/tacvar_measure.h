@@ -58,9 +58,10 @@ void tacvar_csv_write_simple(int region_id, int loc_id,
                              const uint64_t *counter_delta);
 
 /**
- * @brief Write DATA_ROOT/Kernel.CLASS/timer_info.csv once (wx / ignore EEXIST).
- * Rows: region_id,nloc,name. Safe for concurrent ranks (first writer wins).
- * @return 0 on success or file already present, negative on error.
+ * @brief Append DATA_ROOT/timer_info.csv (header once, flock around write).
+ * Rows: suite,benchmark,class,test_tag,timer,region_id,nloc,name.
+ * Sequential tests under the same DATA_ROOT append; concurrent writers serialize.
+ * @return 0 on success, negative on error.
  */
 int tacvar_write_timer_info(const int *region_ids,
                             const int *nlocs,

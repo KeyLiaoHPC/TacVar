@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from typing import Iterable, List, Optional, Sequence, Tuple, Union
 
@@ -14,6 +15,7 @@ from matplotlib.figure import Figure
 from .io import (
     load_measurement_frame,
     load_timer_info_table,
+    normalize_data_roots,
     resolve_kernel_dir,
     select_ids,
     short_hosts_from_frame,
@@ -337,8 +339,148 @@ def _display_notebook_figures(figures: Sequence[Figure]) -> None:
         display(fig)
 
 
+def _heatmap_figures_for_root(
+    data_root: str,
+    kernel_name: str,
+    kernel_class: str,
+    *,
+    hosts: Sequence[str],
+    region_ids: Iterable[int],
+    loc_ids: Iterable[int],
+    fom: str,
+    xrange: Union[int, list, tuple],
+    ref_section_base: bool,
+    ref_key: str,
+    ref_base: str,
+    cmap: ListedColormap,
+    cut_points: np.ndarray,
+    norm: BoundaryNorm,
+    n_bins: int,
+    run_label: str,
+) -> List[Figure]:
+    """Draw heatmaps for one data_root. Does not display figures."""
+    kernel_dir = resolve_kernel_dir(data_root, kernel_name, kernel_class)
+    kernel_label = f"{kernel_name}.{kernel_class}"
+    timer_table = load_timer_info_table(kernel_dir)
+    print(f"timer_info for {kernel_label} ({kernel_dir})")
+    if timer_table.empty:
+        print("  (timer_info.csv missing or empty)")
+        region_names = {}
+    else:
+        print(timer_table.to_string(index=False))
+        region_names = {}
+        if "region_id" in timer_table.columns and "name" in timer_table.columns:
+            region_names = {
+                int(r): str(n)
+                for r, n in zip(timer_table["region_id"], timer_table["name"])
+            }
+
+    df = load_measurement_frame(kernel_dir, hosts=hosts)
+    for col in ("region_id", "loc_id", "rank", fom):
+        if col not in df.columns:
+            raise ValueError(
+                f"required column {col!r} missing from CSVs under {kernel_dir}"
+            )
+
+    selected_rids = select_ids(df, "region_id", region_ids)
+    selected_locs = select_ids(df, "loc_id", loc_ids)
+    host_label = _format_host_label(short_hosts_from_frame(df))
+
+    figures: List[Figure] = []
+    for rid in selected_rids:
+        rname = region_names.get(rid, f"r{rid}")
+        for loc in selected_locs:
+            sub = df[(df["region_id"] == rid) & (df["loc_id"] == loc)]
+            if sub.empty:
+                continue
+            mat, ranks = _build_rank_matrix(sub, fom)
+            col_idx = _resolve_xrange(int(mat.shape[1]), xrange)
+            draw = mat[:, col_idx]
+            n_ranks = len(ranks)
+            n_pts = int(draw.shape[1])
+            n_samples = int(np.isfinite(draw).sum())
+            print(
+                f"region_id={rid} ({rname}), loc_id={loc}: "
+                f"{n_ranks} ranks, {n_pts} data points"
+                + (
+                    f" of {mat.shape[1]}"
+                    if n_pts != int(mat.shape[1])
+                    else ""
+                )
+                + (
+                    f" ({n_samples} samples)"
+                    if n_samples != n_ranks * n_pts
+                    else ""
+                )
+            )
+            ratio = _ratio_from_refs(
+                mat, col_idx, ref_key, ref_base, bool(ref_section_base)
+            )
+
+            bin_idx = np.full(ratio.shape, np.nan, dtype=float)
+            finite_mask = np.isfinite(ratio)
+            bin_idx[finite_mask] = np.digitize(
+                ratio[finite_mask], cut_points, right=True
+            ).astype(float)
+
+            width_in = max(8.0, n_pts * 0.12 + 3.0)
+            height_in = 10.24  # 1024 px at dpi=100
+            fig, ax = plt.subplots(figsize=(width_in, height_in), dpi=100)
+            fig.set_dpi(100)
+
+            cmap_with_bad = cmap.copy()
+            cmap_with_bad.set_bad(color="#e0e0e0")
+            im = ax.imshow(
+                bin_idx,
+                aspect="auto",
+                interpolation="nearest",
+                cmap=cmap_with_bad,
+                norm=norm,
+                origin="upper",
+            )
+            for spine in ax.spines.values():
+                spine.set_color("black")
+                spine.set_linewidth(0.8)
+
+            ax.set_xlabel("sample index (CSV order)")
+            ax.set_ylabel("MPI rank")
+            ax.set_yticks(np.arange(len(ranks)))
+            ax.set_yticklabels([str(r) for r in ranks])
+            if n_pts <= 40:
+                xtick_pos = np.arange(n_pts)
+            else:
+                step = max(1, n_pts // 20)
+                xtick_pos = np.arange(0, n_pts, step)
+            ax.set_xticks(xtick_pos)
+            ax.set_xticklabels([str(int(col_idx[i])) for i in xtick_pos])
+
+            loc_bits = f"region={rname}, loc_id={loc}"
+            if run_label:
+                loc_bits = f"{run_label}; {loc_bits}"
+            title = (
+                f"{fom} heatmap of {kernel_name}.{kernel_class} "
+                f"on {host_label} ({loc_bits})"
+            )
+            ax.set_title(title)
+
+            cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+            cbar.set_ticks(np.arange(n_bins - 1) + 0.5)
+            cbar.set_ticklabels([_format_edge_label(e) for e in cut_points])
+            cbar.set_label("percent vs ref (green < 0 < red)")
+
+            fig.tight_layout()
+            figures.append(fig)
+
+    if not figures:
+        raise ValueError(
+            "no (region_id, loc_id) pairs to plot after filtering "
+            f"(region_ids={selected_rids}, loc_ids={selected_locs})"
+        )
+    return figures
+
+
 def draw_heatmap_npb_mpi(
-    data_root: str = "",
+    data_root: Union[str, Sequence[str]] = "",
     kernel_name: str = "",
     kernel_class: str = "",
     *,
@@ -355,14 +497,15 @@ def draw_heatmap_npb_mpi(
     """
     Draw discrete green-white-red heatmaps for NPB-MPI TacVar CSVs.
 
-    One figure per (region_id, loc_id). X = sample index (CSV order),
-    Y = MPI rank. Cell color is the discrete bin of value/ref.
+    One figure per (region_id, loc_id) per data_root. X = sample index
+    (CSV order), Y = MPI rank. Cell color is the discrete bin of value/ref.
 
     Parameters
     ----------
     data_root, kernel_name, kernel_class
         Path pieces for ``{data_root}/{kernel_name}.{kernel_class}/``.
-        Remaining arguments are keyword-only.
+        ``data_root`` may be a path string or a sequence of paths; each
+        root is plotted independently. Remaining arguments are keyword-only.
     hosts
         ``['all']`` / empty / None for all hosts; else short_host prefixes.
     region_ids, loc_ids
@@ -401,33 +544,8 @@ def draw_heatmap_npb_mpi(
     if bars is None:
         bars = list(_DEFAULT_BARS)
 
-    kernel_dir = resolve_kernel_dir(data_root, kernel_name, kernel_class)
-    kernel_label = f"{kernel_name}.{kernel_class}"
-    timer_table = load_timer_info_table(kernel_dir)
-    print(f"timer_info for {kernel_label} ({kernel_dir})")
-    if timer_table.empty:
-        print("  (timer_info.csv missing or empty)")
-        region_names = {}
-    else:
-        print(timer_table.to_string(index=False))
-        region_names = {}
-        if "region_id" in timer_table.columns and "name" in timer_table.columns:
-            region_names = {
-                int(r): str(n)
-                for r, n in zip(timer_table["region_id"], timer_table["name"])
-            }
-
-    df = load_measurement_frame(kernel_dir, hosts=hosts)
-    for col in ("region_id", "loc_id", "rank", fom):
-        if col not in df.columns:
-            raise ValueError(
-                f"required column {col!r} missing from CSVs under {kernel_dir}"
-            )
-
-    selected_rids = select_ids(df, "region_id", region_ids)
-    selected_locs = select_ids(df, "loc_id", loc_ids)
-    host_label = _format_host_label(short_hosts_from_frame(df))
-
+    roots = normalize_data_roots(data_root)
+    multi_root = len(roots) > 1
     edges, white_idx = _ratio_edges_from_bars(bars)
     n_bins = len(edges) - 1
     cmap = _green_white_red_cmap(n_bins, white_idx)
@@ -437,91 +555,30 @@ def draw_heatmap_npb_mpi(
 
     figures: List[Figure] = []
     with plt.rc_context(_ACADEMIC_RC):
-        for rid in selected_rids:
-            rname = region_names.get(rid, f"r{rid}")
-            for loc in selected_locs:
-                sub = df[(df["region_id"] == rid) & (df["loc_id"] == loc)]
-                if sub.empty:
-                    continue
-                mat, ranks = _build_rank_matrix(sub, fom)
-                col_idx = _resolve_xrange(int(mat.shape[1]), xrange)
-                draw = mat[:, col_idx]
-                n_ranks = len(ranks)
-                n_pts = int(draw.shape[1])
-                n_samples = int(np.isfinite(draw).sum())
-                print(
-                    f"region_id={rid} ({rname}), loc_id={loc}: "
-                    f"{n_ranks} ranks, {n_pts} data points"
-                    + (
-                        f" of {mat.shape[1]}"
-                        if n_pts != int(mat.shape[1])
-                        else ""
-                    )
-                    + (
-                        f" ({n_samples} samples)"
-                        if n_samples != n_ranks * n_pts
-                        else ""
-                    )
-                )
-                ratio = _ratio_from_refs(
-                    mat, col_idx, ref_key, ref_base, bool(ref_section_base)
-                )
-
-                bin_idx = np.full(ratio.shape, np.nan, dtype=float)
-                finite_mask = np.isfinite(ratio)
-                bin_idx[finite_mask] = np.digitize(
-                    ratio[finite_mask], cut_points, right=True
-                ).astype(float)
-
-                width_in = max(8.0, n_pts * 0.12 + 3.0)
-                height_in = 10.24  # 1024 px at dpi=100
-                fig, ax = plt.subplots(figsize=(width_in, height_in), dpi=100)
-                fig.set_dpi(100)
-
-                cmap_with_bad = cmap.copy()
-                cmap_with_bad.set_bad(color="#e0e0e0")
-                im = ax.imshow(
-                    bin_idx,
-                    aspect="auto",
-                    interpolation="nearest",
-                    cmap=cmap_with_bad,
+        for root in roots:
+            run_label = (
+                os.path.basename(os.path.normpath(root)) if multi_root else ""
+            )
+            figures.extend(
+                _heatmap_figures_for_root(
+                    root,
+                    kernel_name,
+                    kernel_class,
+                    hosts=hosts,
+                    region_ids=region_ids,
+                    loc_ids=loc_ids,
+                    fom=fom,
+                    xrange=xrange,
+                    ref_section_base=ref_section_base,
+                    ref_key=ref_key,
+                    ref_base=ref_base,
+                    cmap=cmap,
+                    cut_points=cut_points,
                     norm=norm,
-                    origin="upper",
+                    n_bins=n_bins,
+                    run_label=run_label,
                 )
-                for spine in ax.spines.values():
-                    spine.set_color("black")
-                    spine.set_linewidth(0.8)
+            )
 
-                ax.set_xlabel("sample index (CSV order)")
-                ax.set_ylabel("MPI rank")
-                ax.set_yticks(np.arange(len(ranks)))
-                ax.set_yticklabels([str(r) for r in ranks])
-                if n_pts <= 40:
-                    xtick_pos = np.arange(n_pts)
-                else:
-                    step = max(1, n_pts // 20)
-                    xtick_pos = np.arange(0, n_pts, step)
-                ax.set_xticks(xtick_pos)
-                ax.set_xticklabels([str(int(col_idx[i])) for i in xtick_pos])
-
-                title = (
-                    f"{fom} heatmap of {kernel_name}.{kernel_class} "
-                    f"on {host_label} (region={rname}, loc_id={loc})"
-                )
-                ax.set_title(title)
-
-                cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-                cbar.set_ticks(np.arange(n_bins - 1) + 0.5)
-                cbar.set_ticklabels([_format_edge_label(e) for e in cut_points])
-                cbar.set_label("percent vs ref (green < 0 < red)")
-
-                fig.tight_layout()
-                figures.append(fig)
-
-    if not figures:
-        raise ValueError(
-            "no (region_id, loc_id) pairs to plot after filtering "
-            f"(region_ids={selected_rids}, loc_ids={selected_locs})"
-        )
     _display_notebook_figures(figures)
     return figures

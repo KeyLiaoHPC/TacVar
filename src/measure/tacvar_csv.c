@@ -2,8 +2,8 @@
  * @file tacvar_csv.c
  * @brief Timestamped data directory and per-writer CSV output.
  *
- * Layout: DATA_ROOT/Kernel.CLASS/<short_host>_rRRRR_tTTTT_pPID.csv
- *         DATA_ROOT/Kernel.CLASS/timer_info.csv
+ * Layout: DATA_ROOT/timer_info.csv
+ *         DATA_ROOT/Kernel.CLASS/<short_host>_rRRRR_tTTTT_pPID.csv
  */
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
@@ -15,6 +15,8 @@
 #include <time.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/file.h>
+#include <fcntl.h>
 #include <errno.h>
 #include <sched.h>
 #ifdef _OPENMP
@@ -185,9 +187,8 @@ static void write_header(FILE *fp, tacvar_state_t *st)
     (void)st;
 #endif
     fprintf(fp,
-            "seq,suite,benchmark,class,test_tag,region_id,loc_id,timer,"
-            "raw_start,raw_stop,elapsed_ns,rank,thread,pid,cpu_start,cpu_stop,"
-            "migrated,valid");
+            "seq,region_id,loc_id,raw_start,raw_stop,elapsed_ns,"
+            "rank,thread,pid,cpu_start,cpu_stop,migrated,valid");
 #if TACVAR_COUNTER_COUNT > 0
     fprintf(fp, ",counter_backend");
     for (i = 0; i < st->n_counters; i++) {
@@ -248,16 +249,10 @@ void tacvar_csv_write_simple(int region_id, int loc_id,
     (*seq)++;
 
     fprintf(fp,
-            "%llu,%s,%s,%s,%s,%d,%d,%s,"
-            "%llu,%llu,%lld,%d,%d,%d,%d,%d,%d,%d",
+            "%llu,%d,%d,%llu,%llu,%lld,%d,%d,%d,%d,%d,%d,%d",
             (unsigned long long)*seq,
-            g_tacvar.ctx.suite ? g_tacvar.ctx.suite : "",
-            g_tacvar.ctx.benchmark ? g_tacvar.ctx.benchmark : "",
-            g_tacvar.ctx.klass ? g_tacvar.ctx.klass : "",
-            g_tacvar.ctx.test_tag ? g_tacvar.ctx.test_tag : "",
             region_id,
             loc_id,
-            g_tacvar.timer_name,
             (unsigned long long)raw_start,
             (unsigned long long)raw_stop,
             (long long)elapsed_ns,
@@ -291,28 +286,58 @@ int tacvar_write_timer_info(const int *region_ids,
 {
     char path[TACVAR_PATH_MAX];
     FILE *fp;
-    int i, rc;
+    int i, fd, rc;
+    off_t sz;
+    const char *suite;
+    const char *bench;
+    const char *klass;
+    const char *tag;
+    const char *timer;
 
     if (!g_tacvar.initialized || n <= 0 || !region_ids || !nlocs || !names)
         return -EINVAL;
+    if (!g_tacvar.data_dir[0])
+        return -EINVAL;
 
-    rc = tacvar_prepare_kernel_dir(&g_tacvar);
-    if (rc != 0)
-        return rc;
+    suite = g_tacvar.ctx.suite ? g_tacvar.ctx.suite : "";
+    bench = g_tacvar.ctx.benchmark ? g_tacvar.ctx.benchmark : "";
+    klass = g_tacvar.ctx.klass ? g_tacvar.ctx.klass : "";
+    tag = g_tacvar.ctx.test_tag ? g_tacvar.ctx.test_tag : "";
+    timer = g_tacvar.timer_name[0] ? g_tacvar.timer_name : "";
 
-    snprintf(path, sizeof(path), "%s/timer_info.csv", g_tacvar.kernel_dir);
-    fp = fopen(path, "wx");
-    if (!fp) {
-        if (errno == EEXIST)
-            return 0;
+    snprintf(path, sizeof(path), "%s/timer_info.csv", g_tacvar.data_dir);
+    fd = open(path, O_RDWR | O_CREAT, 0644);
+    if (fd < 0)
         return -errno;
+    if (flock(fd, LOCK_EX) != 0) {
+        rc = -errno;
+        close(fd);
+        return rc;
     }
-    fprintf(fp, "region_id,nloc,name\n");
+    sz = lseek(fd, 0, SEEK_END);
+    if (sz < 0) {
+        rc = -errno;
+        flock(fd, LOCK_UN);
+        close(fd);
+        return rc;
+    }
+    fp = fdopen(fd, "a");
+    if (!fp) {
+        rc = -errno;
+        flock(fd, LOCK_UN);
+        close(fd);
+        return rc;
+    }
+    if (sz == 0)
+        fprintf(fp, "suite,benchmark,class,test_tag,timer,region_id,nloc,name\n");
     for (i = 0; i < n; i++) {
-        fprintf(fp, "%d,%d,%s\n",
+        fprintf(fp, "%s,%s,%s,%s,%s,%d,%d,%s\n",
+                suite, bench, klass, tag, timer,
                 region_ids[i], nlocs[i],
                 names[i] ? names[i] : "");
     }
+    fflush(fp);
+    flock(fd, LOCK_UN);
     fclose(fp);
     return 0;
 }

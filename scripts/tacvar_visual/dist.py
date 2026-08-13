@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+from collections import OrderedDict
 from typing import Iterable, List, NamedTuple, Optional, Sequence, Union
 
 import matplotlib.pyplot as plt
@@ -12,6 +14,7 @@ from .heatmap import (
     _ACADEMIC_RC,
     _DEFAULT_BARS,
     _build_rank_matrix,
+    _compute_ref,
     _display_notebook_figures,
     _format_edge_label,
     _format_host_label,
@@ -23,6 +26,7 @@ from .heatmap import (
 from .io import (
     load_measurement_frame,
     load_timer_info_table,
+    normalize_data_roots,
     resolve_kernel_dir,
     select_ids,
     short_hosts_from_frame,
@@ -46,6 +50,9 @@ class _DistView(NamedTuple):
     n_full_cols: int
     n_samples: int
     ratio_flat: np.ndarray
+    value_flat: np.ndarray
+    ref: float
+    run_label: str
 
 
 def _style_axes(ax) -> None:
@@ -61,38 +68,62 @@ def _new_figure():
     return fig, ax
 
 
-def _title(view: _DistView, kind: str) -> str:
+def _title(view: _DistView, kind: str, *, include_run: bool = False) -> str:
+    loc_bits = f"region={view.rname}, loc_id={view.loc}"
+    if include_run and view.run_label:
+        loc_bits = f"{view.run_label}; {loc_bits}"
     return (
         f"{view.fom} {kind} of {view.kernel_name}.{view.kernel_class} "
-        f"on {view.host_label} (region={view.rname}, loc_id={view.loc})"
+        f"on {view.host_label} ({loc_bits})"
     )
 
 
-def _pct_from_ratio(ratio_flat: np.ndarray) -> np.ndarray:
-    return (ratio_flat - 1.0) * 100.0
+def _pct_bars_to_values(bars: Sequence[float], ref: float) -> List[float]:
+    return [float(ref) * (1.0 + float(p) / 100.0) for p in bars]
 
 
-def _pct_xlim(pct: np.ndarray, bars: Sequence[float]) -> tuple:
-    lo = float(np.min(pct))
-    hi = float(np.max(pct))
+def _value_xlim(
+    values: np.ndarray,
+    bars: Optional[Sequence[float]] = None,
+    ref: Optional[float] = None,
+) -> tuple:
+    lo = float(np.min(values))
+    hi = float(np.max(values))
     span = hi - lo
     pad = 1.0 if span <= 0.0 else max(1.0, 0.05 * span)
-    bars_arr = np.asarray(bars, dtype=float)
-    x0 = min(lo - pad, float(bars_arr[0]))
-    x1 = max(hi + pad, float(bars_arr[-1]))
+    x0 = lo - pad
+    x1 = hi + pad
+    if bars is not None and ref is not None:
+        bar_vals = _pct_bars_to_values(bars, ref)
+        x0 = min(x0, min(bar_vals))
+        x1 = max(x1, max(bar_vals))
     if x1 <= x0:
         x1 = x0 + 2.0
     return (x0, x1)
 
 
-def _paint_gwr_guides(ax, bars: Sequence[float], cmap, n_bins: int, xlim) -> None:
-    edges_pct = np.concatenate(
+def _data_xlim(arrays: Sequence[np.ndarray]) -> tuple:
+    lo = min(float(np.min(a)) for a in arrays)
+    hi = max(float(np.max(a)) for a in arrays)
+    return _value_xlim(np.asarray([lo, hi], dtype=float))
+
+
+def _paint_gwr_guides(
+    ax,
+    bars: Sequence[float],
+    cmap,
+    n_bins: int,
+    xlim,
+    *,
+    zero: float = 0.0,
+) -> None:
+    edges = np.concatenate(
         [[-np.inf], np.asarray(bars, dtype=float), [np.inf]]
     )
     x0, x1 = xlim
     for i in range(n_bins):
-        lo = edges_pct[i]
-        hi = edges_pct[i + 1]
+        lo = edges[i]
+        hi = edges[i + 1]
         if np.isneginf(lo):
             lo = x0
         if np.isposinf(hi):
@@ -111,36 +142,51 @@ def _paint_gwr_guides(ax, bars: Sequence[float], cmap, n_bins: int, xlim) -> Non
         ax.axvline(
             float(p), color="0.4", linestyle="--", linewidth=0.6, zorder=2
         )
-    ax.axvline(0.0, color="0.2", linestyle="-", linewidth=0.7, zorder=2)
+    ax.axvline(float(zero), color="0.2", linestyle="-", linewidth=0.7, zorder=2)
 
 
-def _collect_dist_views(
+def _attach_percent_top_axis(ax, xlim, ref: float, bars: Sequence[float]):
+    if ref == 0.0:
+        raise ValueError("ref=0; cannot form percent axis")
+    vmin, vmax = xlim
+    ax2 = ax.twiny()
+    ax2.set_xlim((vmin / ref - 1.0) * 100.0, (vmax / ref - 1.0) * 100.0)
+    ax2.set_xticks(list(bars))
+    ax2.set_xticklabels([f"{p:g}%" for p in bars])
+    ax2.set_xlabel("percent vs ref")
+    _style_axes(ax2)
+    return ax2
+
+
+def _tab10_color(i: int):
+    return plt.get_cmap("tab10")(i % 10)
+
+
+def _group_views_by_region_loc(
+    views: Sequence[_DistView],
+) -> List[List[_DistView]]:
+    groups: OrderedDict[tuple, List[_DistView]] = OrderedDict()
+    for view in views:
+        groups.setdefault((view.rid, view.loc), []).append(view)
+    return list(groups.values())
+
+
+def _collect_dist_views_for_root(
     data_root: str,
     kernel_name: str,
     kernel_class: str,
     *,
-    hosts: Optional[Sequence[str]],
-    region_ids: Optional[Iterable[int]],
-    loc_ids: Optional[Iterable[int]],
-    ranks: Optional[Iterable[int]],
+    hosts: Sequence[str],
+    region_ids: Iterable[int],
+    loc_ids: Iterable[int],
+    ranks: Iterable[int],
     fom: str,
     xrange: Union[int, list, tuple],
     ref_section_base: bool,
     ref_key: str,
     ref_base: str,
-    bars: Optional[Sequence[float]],
-) -> tuple:
-    if hosts is None:
-        hosts = ["all"]
-    if region_ids is None:
-        region_ids = range(0)
-    if loc_ids is None:
-        loc_ids = range(0)
-    if ranks is None:
-        ranks = range(0)
-    if bars is None:
-        bars = list(_DEFAULT_BARS)
-
+    run_label: str,
+) -> List[_DistView]:
     kernel_dir = resolve_kernel_dir(data_root, kernel_name, kernel_class)
     kernel_label = f"{kernel_name}.{kernel_class}"
     timer_table = load_timer_info_table(kernel_dir)
@@ -203,12 +249,21 @@ def _collect_dist_views(
             ratio = _ratio_from_refs(
                 mat, col_idx, ref_key, ref_base, bool(ref_section_base)
             )
-            finite = ratio[np.isfinite(ratio)]
-            if finite.size == 0:
+            finite_ratio = ratio[np.isfinite(ratio)]
+            if finite_ratio.size == 0:
                 raise ValueError(
                     f"no finite value/ref samples for region_id={rid}, "
                     f"loc_id={loc} after filtering"
                 )
+            value_flat = draw[np.isfinite(draw)]
+            if value_flat.size == 0:
+                raise ValueError(
+                    f"no finite {fom} samples for region_id={rid}, "
+                    f"loc_id={loc} after filtering"
+                )
+            stat = draw if ref_section_base else mat
+            finite_stat = stat[np.isfinite(stat)]
+            mapping_ref = _compute_ref(finite_stat, ref_key)
             views.append(
                 _DistView(
                     rid=rid,
@@ -221,8 +276,11 @@ def _collect_dist_views(
                     n_ranks=n_ranks,
                     n_pts=n_pts,
                     n_full_cols=int(mat.shape[1]),
-                    n_samples=int(finite.size),
-                    ratio_flat=np.asarray(finite, dtype=float),
+                    n_samples=int(value_flat.size),
+                    ratio_flat=np.asarray(finite_ratio, dtype=float),
+                    value_flat=np.asarray(value_flat, dtype=float),
+                    ref=float(mapping_ref),
+                    run_label=run_label,
                 )
             )
 
@@ -232,11 +290,63 @@ def _collect_dist_views(
             f"(region_ids={selected_rids}, loc_ids={selected_locs}, "
             f"ranks={selected_ranks})"
         )
-    return views, list(bars)
+    return views
+
+
+def _collect_dist_views(
+    data_root: Union[str, Sequence[str]],
+    kernel_name: str,
+    kernel_class: str,
+    *,
+    hosts: Optional[Sequence[str]],
+    region_ids: Optional[Iterable[int]],
+    loc_ids: Optional[Iterable[int]],
+    ranks: Optional[Iterable[int]],
+    fom: str,
+    xrange: Union[int, list, tuple],
+    ref_section_base: bool,
+    ref_key: str,
+    ref_base: str,
+    bars: Optional[Sequence[float]],
+) -> tuple:
+    if hosts is None:
+        hosts = ["all"]
+    if region_ids is None:
+        region_ids = range(0)
+    if loc_ids is None:
+        loc_ids = range(0)
+    if ranks is None:
+        ranks = range(0)
+    if bars is None:
+        bars = list(_DEFAULT_BARS)
+
+    roots = normalize_data_roots(data_root)
+    multi_root = len(roots) > 1
+    views: List[_DistView] = []
+    for root in roots:
+        run_label = os.path.basename(os.path.normpath(root))
+        views.extend(
+            _collect_dist_views_for_root(
+                root,
+                kernel_name,
+                kernel_class,
+                hosts=hosts,
+                region_ids=region_ids,
+                loc_ids=loc_ids,
+                ranks=ranks,
+                fom=fom,
+                xrange=xrange,
+                ref_section_base=ref_section_base,
+                ref_key=ref_key,
+                ref_base=ref_base,
+                run_label=run_label,
+            )
+        )
+    return views, list(bars), multi_root
 
 
 def draw_histogram_npb_mpi(
-    data_root: str = "",
+    data_root: Union[str, Sequence[str]] = "",
     kernel_name: str = "",
     kernel_class: str = "",
     *,
@@ -254,15 +364,17 @@ def draw_histogram_npb_mpi(
     """
     Draw discrete green-white-red histograms of value/ref for NPB-MPI CSVs.
 
-    One figure per (region_id, loc_id). Selected ranks are pooled into a
-    single count histogram. X = percent-vs-ref bins from ``bars``; Y = count.
-    Bar color is the same discrete green-white-red map as the heatmap.
+    One figure per (region_id, loc_id) per data_root. Selected ranks are
+    pooled into a single count histogram. X = percent-vs-ref bins from
+    ``bars``; Y = count. Bar color is the same discrete green-white-red
+    map as the heatmap.
 
     Parameters
     ----------
     data_root, kernel_name, kernel_class
         Path pieces for ``{data_root}/{kernel_name}.{kernel_class}/``.
-        Remaining arguments are keyword-only.
+        ``data_root`` may be a path string or a sequence of paths; each
+        root is plotted independently. Remaining arguments are keyword-only.
     hosts
         ``['all']`` / empty / None for all hosts; else short_host prefixes.
     region_ids, loc_ids
@@ -295,7 +407,7 @@ def draw_histogram_npb_mpi(
     -------
     list of matplotlib.figure.Figure
     """
-    views, bars_used = _collect_dist_views(
+    views, bars_used, multi_root = _collect_dist_views(
         data_root,
         kernel_name,
         kernel_class,
@@ -338,7 +450,7 @@ def draw_histogram_npb_mpi(
             ax.set_xticklabels(tick_labels)
             ax.set_xlabel("percent vs ref")
             ax.set_ylabel("count")
-            ax.set_title(_title(view, "histogram"))
+            ax.set_title(_title(view, "histogram", include_run=multi_root))
             fig.tight_layout()
             figures.append(fig)
 
@@ -346,8 +458,61 @@ def draw_histogram_npb_mpi(
     return figures
 
 
+def _draw_pdf_one(
+    ax,
+    view: _DistView,
+    xlim: tuple,
+    *,
+    color,
+    fill: bool,
+    label: Optional[str],
+) -> None:
+    n_pdf_bins = int(np.clip(round(np.sqrt(view.value_flat.size)), 16, 80))
+    dens, pdf_edges = np.histogram(
+        view.value_flat, bins=n_pdf_bins, range=xlim, density=True
+    )
+    if fill:
+        ax.stairs(
+            dens,
+            pdf_edges,
+            fill=True,
+            color=color,
+            alpha=0.45,
+            linewidth=0.0,
+            zorder=3,
+        )
+        ax.stairs(
+            dens,
+            pdf_edges,
+            fill=False,
+            color="black",
+            linewidth=1.1,
+            zorder=4,
+            label=label,
+        )
+    else:
+        ax.stairs(
+            dens,
+            pdf_edges,
+            fill=True,
+            color=color,
+            alpha=0.18,
+            linewidth=0.0,
+            zorder=3,
+        )
+        ax.stairs(
+            dens,
+            pdf_edges,
+            fill=False,
+            color=color,
+            linewidth=1.1,
+            zorder=4,
+            label=label,
+        )
+
+
 def draw_pdf_npb_mpi(
-    data_root: str = "",
+    data_root: Union[str, Sequence[str]] = "",
     kernel_name: str = "",
     kernel_class: str = "",
     *,
@@ -361,26 +526,28 @@ def draw_pdf_npb_mpi(
     ref_key: str = "median",
     ref_base: str = "all",
     bars: Optional[Sequence[float]] = None,
+    overlap: bool = False,
 ) -> List[Figure]:
     """
-    Draw a pooled PDF of percent-vs-ref for NPB-MPI TacVar CSVs.
+    Draw a pooled PDF of FOM values for NPB-MPI TacVar CSVs.
 
-    One figure per (region_id, loc_id). Selected ranks are pooled into a
-    single density histogram of ``(value/ref - 1) * 100``. ``bars`` are
-    vertical guides with light green-white-red bands (same bins as the
-    heatmap). No per-rank series.
+    One figure per (region_id, loc_id) when ``overlap`` is False (and per
+    data_root). Bottom x = the FOM column; top x = percent-vs-ref ``bars``
+    mapped through a single pooled ref. Selected ranks are pooled into one
+    density histogram. No per-rank series.
 
     Parameters
     ----------
     data_root, kernel_name, kernel_class
         Path pieces for ``{data_root}/{kernel_name}.{kernel_class}/``.
+        ``data_root`` may be a path string or a sequence of paths.
         Remaining arguments are keyword-only.
     hosts
         ``['all']`` / empty / None for all hosts; else short_host prefixes.
     region_ids, loc_ids
         Ids to plot; empty means all present (intersection that exists in data).
     ranks
-        MPI ranks to include; empty means all ranks present. Ratios from
+        MPI ranks to include; empty means all ranks present. Values from
         selected ranks are flattened into one sample set (no per-rank series).
     fom
         Numeric CSV column (default ``elapsed_ns``).
@@ -390,23 +557,28 @@ def draw_pdf_npb_mpi(
         slice ``[a, b)``; of floats in ``[0, 1]`` it is
         ``[int(n*a), int(n*b))``. Integer ``(0, 1)`` is only column 0.
     ref_section_base
-        If True, compute refs on the ``xrange`` window; if False, on the
-        full rank-by-sample matrix. Display still uses ``xrange``.
+        If True, compute the mapping ref on the ``xrange`` window; if False,
+        on the full rank-by-sample matrix. Display still uses ``xrange``.
     ref_key
         ``max``, ``min``, ``median``, ``average``, or ``pxx`` percentile.
+        Used for the percent top axis (pooled ``all`` aggregation).
     ref_base
-        Sample set for ``ref_key``: ``all`` (one ref), ``x`` (all ranks of
-        this seq), or ``y`` (seqs of this rank, scoped by
-        ``ref_section_base``). Applied per cell, then pooled.
+        Sample set for per-cell ``value/ref`` used by the histogram path.
+        PDF curves are raw FOM values; the twin percent axis always uses
+        one pooled ref (``ref_key`` on the ``ref_section_base`` window).
     bars
-        Strictly increasing percent-deviation cut points. Used as vertical
-        guides and GWR background bands, not as PDF histogram edges.
+        Strictly increasing percent-deviation cut points. Used as top-axis
+        ticks and GWR background bands. Ignored when ``overlap`` is True.
+    overlap
+        If False (default), one figure per data_root. If True, overlay all
+        listed roots on one axes per (region_id, loc_id) and ignore
+        ``bars``.
 
     Returns
     -------
     list of matplotlib.figure.Figure
     """
-    views, bars_used = _collect_dist_views(
+    views, bars_used, multi_root = _collect_dist_views(
         data_root,
         kernel_name,
         kernel_class,
@@ -421,51 +593,62 @@ def draw_pdf_npb_mpi(
         ref_base=ref_base,
         bars=bars,
     )
-    edges, white_idx = _ratio_edges_from_bars(bars_used)
-    n_bins = len(edges) - 1
-    cmap = _green_white_red_cmap(n_bins, white_idx)
 
     figures: List[Figure] = []
     with plt.rc_context(_ACADEMIC_RC):
-        for view in views:
-            pct = _pct_from_ratio(view.ratio_flat)
-            xlim = _pct_xlim(pct, bars_used)
-            n_pdf_bins = int(np.clip(round(np.sqrt(pct.size)), 16, 80))
-            dens, pdf_edges = np.histogram(
-                pct, bins=n_pdf_bins, range=xlim, density=True
-            )
-            fig, ax = _new_figure()
-            _paint_gwr_guides(ax, bars_used, cmap, n_bins, xlim)
-            ax.stairs(
-                dens,
-                pdf_edges,
-                fill=True,
-                color="0.25",
-                alpha=0.45,
-                linewidth=0.0,
-                zorder=3,
-            )
-            ax.stairs(
-                dens,
-                pdf_edges,
-                fill=False,
-                color="black",
-                linewidth=1.1,
-                zorder=4,
-            )
-            ax.set_xlim(xlim)
-            ax.set_xlabel("percent vs ref")
-            ax.set_ylabel("probability density")
-            ax.set_title(_title(view, "pdf"))
-            fig.tight_layout()
-            figures.append(fig)
+        if overlap:
+            for group in _group_views_by_region_loc(views):
+                xlim = _data_xlim([v.value_flat for v in group])
+                fig, ax = _new_figure()
+                for i, view in enumerate(group):
+                    _draw_pdf_one(
+                        ax,
+                        view,
+                        xlim,
+                        color=_tab10_color(i),
+                        fill=False,
+                        label=view.run_label,
+                    )
+                ax.set_xlim(xlim)
+                ax.set_xlabel(group[0].fom)
+                ax.set_ylabel("probability density")
+                ax.set_title(_title(group[0], "pdf", include_run=False))
+                ax.legend()
+                fig.tight_layout()
+                figures.append(fig)
+        else:
+            edges, white_idx = _ratio_edges_from_bars(bars_used)
+            n_bins = len(edges) - 1
+            cmap = _green_white_red_cmap(n_bins, white_idx)
+            for view in views:
+                xlim = _value_xlim(view.value_flat, bars_used, view.ref)
+                fig, ax = _new_figure()
+                value_bars = _pct_bars_to_values(bars_used, view.ref)
+                _paint_gwr_guides(
+                    ax, value_bars, cmap, n_bins, xlim, zero=view.ref
+                )
+                _draw_pdf_one(
+                    ax,
+                    view,
+                    xlim,
+                    color="0.25",
+                    fill=True,
+                    label=None,
+                )
+                ax.set_xlim(xlim)
+                ax.set_xlabel(view.fom)
+                ax.set_ylabel("probability density")
+                ax.set_title(_title(view, "pdf", include_run=multi_root))
+                _attach_percent_top_axis(ax, xlim, view.ref, bars_used)
+                fig.tight_layout()
+                figures.append(fig)
 
     _display_notebook_figures(figures)
     return figures
 
 
 def draw_cdf_npb_mpi(
-    data_root: str = "",
+    data_root: Union[str, Sequence[str]] = "",
     kernel_name: str = "",
     kernel_class: str = "",
     *,
@@ -479,26 +662,28 @@ def draw_cdf_npb_mpi(
     ref_key: str = "median",
     ref_base: str = "all",
     bars: Optional[Sequence[float]] = None,
+    overlap: bool = False,
 ) -> List[Figure]:
     """
-    Draw a pooled empirical CDF of percent-vs-ref for NPB-MPI TacVar CSVs.
+    Draw a pooled empirical CDF of FOM values for NPB-MPI TacVar CSVs.
 
-    One figure per (region_id, loc_id). Selected ranks are pooled into a
-    single ECDF of ``(value/ref - 1) * 100``. ``bars`` are vertical guides
-    with light green-white-red bands (same bins as the heatmap). A dotted
-    line marks cumulative probability 0.5. No per-rank series.
+    One figure per (region_id, loc_id) when ``overlap`` is False (and per
+    data_root). Bottom x = the FOM column; top x = percent-vs-ref ``bars``
+    mapped through a single pooled ref. Selected ranks are pooled into one
+    ECDF. A dotted line marks cumulative probability 0.5. No per-rank series.
 
     Parameters
     ----------
     data_root, kernel_name, kernel_class
         Path pieces for ``{data_root}/{kernel_name}.{kernel_class}/``.
+        ``data_root`` may be a path string or a sequence of paths.
         Remaining arguments are keyword-only.
     hosts
         ``['all']`` / empty / None for all hosts; else short_host prefixes.
     region_ids, loc_ids
         Ids to plot; empty means all present (intersection that exists in data).
     ranks
-        MPI ranks to include; empty means all ranks present. Ratios from
+        MPI ranks to include; empty means all ranks present. Values from
         selected ranks are flattened into one sample set (no per-rank series).
     fom
         Numeric CSV column (default ``elapsed_ns``).
@@ -508,23 +693,28 @@ def draw_cdf_npb_mpi(
         slice ``[a, b)``; of floats in ``[0, 1]`` it is
         ``[int(n*a), int(n*b))``. Integer ``(0, 1)`` is only column 0.
     ref_section_base
-        If True, compute refs on the ``xrange`` window; if False, on the
-        full rank-by-sample matrix. Display still uses ``xrange``.
+        If True, compute the mapping ref on the ``xrange`` window; if False,
+        on the full rank-by-sample matrix. Display still uses ``xrange``.
     ref_key
         ``max``, ``min``, ``median``, ``average``, or ``pxx`` percentile.
+        Used for the percent top axis (pooled ``all`` aggregation).
     ref_base
-        Sample set for ``ref_key``: ``all`` (one ref), ``x`` (all ranks of
-        this seq), or ``y`` (seqs of this rank, scoped by
-        ``ref_section_base``). Applied per cell, then pooled.
+        Sample set for per-cell ``value/ref`` used by the histogram path.
+        CDF curves are raw FOM values; the twin percent axis always uses
+        one pooled ref (``ref_key`` on the ``ref_section_base`` window).
     bars
-        Strictly increasing percent-deviation cut points. Used as vertical
-        guides and GWR background bands.
+        Strictly increasing percent-deviation cut points. Used as top-axis
+        ticks and GWR background bands. Ignored when ``overlap`` is True.
+    overlap
+        If False (default), one figure per data_root. If True, overlay all
+        listed roots on one axes per (region_id, loc_id) and ignore
+        ``bars``.
 
     Returns
     -------
     list of matplotlib.figure.Figure
     """
-    views, bars_used = _collect_dist_views(
+    views, bars_used, multi_root = _collect_dist_views(
         data_root,
         kernel_name,
         kernel_class,
@@ -539,28 +729,57 @@ def draw_cdf_npb_mpi(
         ref_base=ref_base,
         bars=bars,
     )
-    edges, white_idx = _ratio_edges_from_bars(bars_used)
-    n_bins = len(edges) - 1
-    cmap = _green_white_red_cmap(n_bins, white_idx)
 
     figures: List[Figure] = []
     with plt.rc_context(_ACADEMIC_RC):
-        for view in views:
-            pct = _pct_from_ratio(view.ratio_flat)
-            xs = np.sort(pct)
-            ys = np.arange(1, xs.size + 1, dtype=float) / float(xs.size)
-            xlim = _pct_xlim(pct, bars_used)
-            fig, ax = _new_figure()
-            _paint_gwr_guides(ax, bars_used, cmap, n_bins, xlim)
-            ax.step(xs, ys, where="post", color="black", linewidth=1.2, zorder=4)
-            ax.axhline(0.5, color="0.5", linestyle=":", linewidth=0.8, zorder=3)
-            ax.set_xlim(xlim)
-            ax.set_ylim(0.0, 1.02)
-            ax.set_xlabel("percent vs ref")
-            ax.set_ylabel("cumulative probability")
-            ax.set_title(_title(view, "cdf"))
-            fig.tight_layout()
-            figures.append(fig)
+        if overlap:
+            for group in _group_views_by_region_loc(views):
+                xlim = _data_xlim([v.value_flat for v in group])
+                fig, ax = _new_figure()
+                for i, view in enumerate(group):
+                    xs = np.sort(view.value_flat)
+                    ys = np.arange(1, xs.size + 1, dtype=float) / float(xs.size)
+                    ax.step(
+                        xs,
+                        ys,
+                        where="post",
+                        color=_tab10_color(i),
+                        linewidth=1.2,
+                        zorder=4,
+                        label=view.run_label,
+                    )
+                ax.axhline(0.5, color="0.5", linestyle=":", linewidth=0.8, zorder=3)
+                ax.set_xlim(xlim)
+                ax.set_ylim(0.0, 1.02)
+                ax.set_xlabel(group[0].fom)
+                ax.set_ylabel("cumulative probability")
+                ax.set_title(_title(group[0], "cdf", include_run=False))
+                ax.legend()
+                fig.tight_layout()
+                figures.append(fig)
+        else:
+            edges, white_idx = _ratio_edges_from_bars(bars_used)
+            n_bins = len(edges) - 1
+            cmap = _green_white_red_cmap(n_bins, white_idx)
+            for view in views:
+                xlim = _value_xlim(view.value_flat, bars_used, view.ref)
+                xs = np.sort(view.value_flat)
+                ys = np.arange(1, xs.size + 1, dtype=float) / float(xs.size)
+                fig, ax = _new_figure()
+                value_bars = _pct_bars_to_values(bars_used, view.ref)
+                _paint_gwr_guides(
+                    ax, value_bars, cmap, n_bins, xlim, zero=view.ref
+                )
+                ax.step(xs, ys, where="post", color="black", linewidth=1.2, zorder=4)
+                ax.axhline(0.5, color="0.5", linestyle=":", linewidth=0.8, zorder=3)
+                ax.set_xlim(xlim)
+                ax.set_ylim(0.0, 1.02)
+                ax.set_xlabel(view.fom)
+                ax.set_ylabel("cumulative probability")
+                ax.set_title(_title(view, "cdf", include_run=multi_root))
+                _attach_percent_top_axis(ax, xlim, view.ref, bars_used)
+                fig.tight_layout()
+                figures.append(fig)
 
     _display_notebook_figures(figures)
     return figures

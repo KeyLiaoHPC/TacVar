@@ -5,13 +5,39 @@ from __future__ import annotations
 import glob
 import os
 import re
-from typing import Iterable, List, Optional, Sequence
+from typing import Iterable, List, Optional, Sequence, Union
 
 import pandas as pd
 
 _CSV_NAME_RE = re.compile(
     r"^(?P<host>.+)_r(?P<rank>\d{4})_t(?P<thread>\d{4})_p(?P<pid>\d+)\.csv$"
 )
+
+
+def normalize_data_roots(data_root: Union[str, Sequence[str]]) -> List[str]:
+    """Return a non-empty list of data_root path strings.
+
+    A single string becomes a one-element list. A sequence must contain
+    only non-empty strings. ``str`` is checked before ``Sequence``.
+    """
+    if isinstance(data_root, str):
+        roots = [data_root]
+    elif isinstance(data_root, Sequence):
+        roots = list(data_root)
+    else:
+        raise ValueError(
+            "data_root must be a path string or a sequence of paths, "
+            f"got {type(data_root).__name__}"
+        )
+    if not roots:
+        raise ValueError("data_root is empty")
+    for root in roots:
+        if not isinstance(root, str) or not root:
+            raise ValueError(
+                "data_root entries must be non-empty strings, "
+                f"got {root!r}"
+            )
+    return roots
 
 
 def resolve_kernel_dir(
@@ -87,12 +113,52 @@ def short_hosts_from_frame(df: pd.DataFrame) -> List[str]:
     return sorted(set(hosts))
 
 
+def _kernel_identity_from_dir(kernel_dir: str) -> tuple:
+    """Parse ``name.class`` from a kernel directory basename."""
+    base = os.path.basename(os.path.normpath(kernel_dir))
+    name, sep, klass = base.partition(".")
+    if not sep or not name or not klass:
+        return "", ""
+    return name, klass
+
+
+def _filter_timer_info_for_kernel(df: pd.DataFrame, kernel_dir: str) -> pd.DataFrame:
+    """Keep catalog rows for this kernel; first unique region_id after filter."""
+    if df.empty:
+        return df
+    if "benchmark" not in df.columns or "class" not in df.columns:
+        return df
+    bench, klass = _kernel_identity_from_dir(kernel_dir)
+    if not bench:
+        return df
+    out = df[
+        (df["benchmark"].astype(str) == bench)
+        & (df["class"].astype(str) == klass)
+    ].copy()
+    if out.empty or "region_id" not in out.columns:
+        return out
+    return out.drop_duplicates(subset=["region_id"], keep="first")
+
+
 def load_timer_info_table(kernel_dir: str) -> pd.DataFrame:
-    """Load timer_info.csv as a DataFrame; empty if missing."""
-    path = os.path.join(kernel_dir, "timer_info.csv")
-    if not os.path.isfile(path):
+    """Load timer_info.csv as a DataFrame; empty if missing.
+
+    Prefers ``{data_root}/timer_info.csv`` (parent of ``kernel_dir``).
+    Falls back to ``{kernel_dir}/timer_info.csv`` for older datasets.
+    When catalog columns ``benchmark`` and ``class`` exist, rows are
+    filtered to this kernel; duplicate ``region_id`` keeps the first.
+    """
+    data_root = os.path.dirname(os.path.normpath(kernel_dir))
+    catalog = os.path.join(data_root, "timer_info.csv")
+    legacy = os.path.join(kernel_dir, "timer_info.csv")
+    if os.path.isfile(catalog):
+        path = catalog
+    elif os.path.isfile(legacy):
+        path = legacy
+    else:
         return pd.DataFrame()
-    return pd.read_csv(path)
+    df = pd.read_csv(path)
+    return _filter_timer_info_for_kernel(df, kernel_dir)
 
 
 def load_timer_info(kernel_dir: str) -> dict:

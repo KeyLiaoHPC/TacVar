@@ -50,10 +50,10 @@ check_csv() {
   local dir
   dir=$(ls -dt "$cwd"/data_????????T?????? 2>/dev/null | head -1 || true)
   [[ -n "$dir" ]] || { echo "ERROR: no data_* under $cwd"; exit 1; }
-  local info
-  info=$(find "$dir" -name 'timer_info.csv' | head -1 || true)
-  [[ -n "$info" ]] || { echo "ERROR: no timer_info.csv under $dir"; exit 1; }
-  head -1 "$info" | grep -q 'region_id,nloc,name'
+  local info="$dir/timer_info.csv"
+  [[ -f "$info" ]] || { echo "ERROR: no timer_info.csv at $info"; exit 1; }
+  head -1 "$info" | grep -q 'suite,benchmark,class,test_tag,timer,region_id,nloc,name' \
+    || { echo "ERROR: bad timer_info header"; exit 1; }
   local csv
   csv=$(find "$dir" -name '*.csv' ! -name 'timer_info.csv' | head -1)
   [[ -n "$csv" ]] || { echo "ERROR: no CSV"; exit 1; }
@@ -61,7 +61,7 @@ check_csv() {
     || { echo "ERROR: unexpected CSV path: $csv"; exit 1; }
   head -1 "$csv" | grep -q elapsed_ns
   head -1 "$csv" | grep -q loc_id
-  awk -F, 'NR>1 && $11+0 < 0 {exit 1}' "$csv"
+  awk -F, 'NR>1 && $6+0 < 0 {exit 1}' "$csv"
   echo "CSV OK: $csv"
 }
 

@@ -61,10 +61,9 @@ check_csv_dir() {
   local dir
   dir=$(ls -dt "$cwd"/data_????????T?????? 2>/dev/null | head -1 || true)
   [[ -n "$dir" ]] || { echo "ERROR: no data_* under $cwd"; exit 1; }
-  local info
-  info=$(find "$dir" -name 'timer_info.csv' | head -1 || true)
-  [[ -n "$info" ]] || { echo "ERROR: no timer_info.csv under $dir"; exit 1; }
-  head -1 "$info" | grep -q 'region_id,nloc,name' \
+  local info="$dir/timer_info.csv"
+  [[ -f "$info" ]] || { echo "ERROR: no timer_info.csv at $info"; exit 1; }
+  head -1 "$info" | grep -q 'suite,benchmark,class,test_tag,timer,region_id,nloc,name' \
     || { echo "ERROR: bad timer_info header"; exit 1; }
   local csvs
   mapfile -t csvs < <(find "$dir" -name '*.csv' ! -name 'timer_info.csv' | sort)
@@ -76,24 +75,24 @@ check_csv_dir() {
   hdr=$(head -1 "${csvs[0]}")
   echo "$hdr" | grep -q 'elapsed_ns' || { echo "ERROR: bad CSV header"; exit 1; }
   echo "$hdr" | grep -q 'loc_id' || { echo "ERROR: missing loc_id column"; exit 1; }
-  echo "$hdr" | grep -q 'timer' || { echo "ERROR: missing timer column"; exit 1; }
-  # non-negative elapsed (column 11 after loc_id insert)
-  awk -F, 'NR>1 && $11+0 < 0 { bad=1 } END { exit bad+0 }' "${csvs[@]}" \
+  echo "$hdr" | grep -q 'region_id' || { echo "ERROR: missing region_id column"; exit 1; }
+  # seq,region_id,loc_id,raw_start,raw_stop,elapsed_ns,rank,...
+  awk -F, 'NR>1 && $6+0 < 0 { bad=1 } END { exit bad+0 }' "${csvs[@]}" \
     || { echo "ERROR: negative elapsed_ns"; exit 1; }
   if [[ -n "$expect_ranks" ]]; then
     local ranks
-    ranks=$(awk -F, 'NR>1 {print $12}' "${csvs[@]}" | sort -nu | tr '\n' ',')
+    ranks=$(awk -F, 'NR>1 {print $7}' "${csvs[@]}" | sort -nu | tr '\n' ',')
     echo "CSV ranks: $ranks (expect 0..$((expect_ranks-1)))"
   fi
   # IS: region 1 (rcomp/T_RANK) should have nloc>=3 when present
   if [[ "$(basename "$(dirname "${csvs[0]}")")" == is.* ]]; then
-    awk -F, 'NR>1 && $1+0==1 && $2+0<3 { bad=1 } END { exit bad+0 }' "$info" \
+    awk -F, 'NR>1 && $6+0==1 && $7+0<3 { bad=1 } END { exit bad+0 }' "$info" \
       || { echo "ERROR: IS timer_info region 1 nloc < 3"; exit 1; }
     local nlocs
-    nlocs=$(awk -F, 'NR>1 && $6+0==1 {print $7}' "${csvs[@]}" | sort -nu | wc -l)
+    nlocs=$(awk -F, 'NR>1 && $2+0==1 {print $3}' "${csvs[@]}" | sort -nu | wc -l)
     [[ "$nlocs" -ge 2 ]] || { echo "ERROR: IS region_id=1 has <2 distinct loc_id in CSV"; exit 1; }
   fi
-  echo "CSV OK: $dir (${#csvs[@]} files, timer_info=$(basename "$(dirname "$info")")/timer_info.csv)"
+  echo "CSV OK: $dir (${#csvs[@]} files, timer_info=$info)"
 }
 
 apply_temp_conf() {

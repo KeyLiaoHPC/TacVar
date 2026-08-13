@@ -161,33 +161,44 @@ make -C src/measure CONF=suites/lmbench/tacvar.conf CONSUMER=lmbench \
 
 ### 3.5 CSV output
 
-Each run creates **one** `data_YYYYMMDDTHHmmss/` (`DATA_ROOT`) under the benchmark cwd (`TACVAR_OUTPUT_ROOT`). Override with `TACVAR_DATA_DIR` to reuse an existing directory (e.g. after fork/exec). Files are nested by kernel:
+Each run creates **one** `data_YYYYMMDDTHHmmss/` (`DATA_ROOT`) under the benchmark cwd (`TACVAR_OUTPUT_ROOT`). Override with `TACVAR_DATA_DIR` to reuse an existing directory (e.g. after fork/exec, or to collect several kernels in one tree). Files:
 
 ```text
-<DATA_ROOT>/<Kernel>.<CLASS>/timer_info.csv
+<DATA_ROOT>/timer_info.csv
 <DATA_ROOT>/<Kernel>.<CLASS>/<short_host>_rRRRR_tTTTT_pPID.csv
 ```
 
-Example: `data_20260813T082100/is.S/c920bn1_r0000_t0000_p12345.csv`. `short_host` is `hostname -s` (never FQDN). Opened in append mode; header is written once on the first row. `timer_info.csv` lists `region_id,nloc,name` once per run.
+Example: `data_20260813T082100/is.S/c920bn1_r0000_t0000_p12345.csv`. `short_host` is `hostname -s` (never FQDN). Rank CSVs open in append mode; the header is written once on the first row. `timer_info.csv` sits at `DATA_ROOT`. The header is written once; each test appends its region rows (flock-serialized). A second kernel with `TACVAR_DATA_DIR` pointing at the same tree appends another block.
 
-**Base header** (always present; comma-separated, no quoting):
+**`timer_info.csv`** (one row per timed region per test):
 
 ```text
-seq,suite,benchmark,class,test_tag,region_id,loc_id,timer,
-raw_start,raw_stop,elapsed_ns,rank,thread,pid,cpu_start,cpu_stop,
-migrated,valid
+suite,benchmark,class,test_tag,timer,region_id,nloc,name
+```
+
+| Column | Type | Meaning |
+|--------|------|---------|
+| `suite` | string | `npb-mpi`, `npb-omp`, or `lmbench` |
+| `benchmark` | string | e.g. `is`, `cg`, `lat_syscall` |
+| `class` | string | NPB class letter (`S`…`E`); often `X` / empty for lmbench |
+| `test_tag` | string | Optional sub-test label (may be empty) |
+| `timer` | string | Build-time timer name (`TACVAR_TIMER`) |
+| `region_id` | int | Timed region index (NPB timer slot, or 0 for lmbench) |
+| `nloc` | int | Number of `loc_id` sites observed for this region |
+| `name` | string | Region label (`rcomp`, `total`, …) |
+
+**Measurement CSV base header** (always present; comma-separated, no quoting):
+
+```text
+seq,region_id,loc_id,raw_start,raw_stop,elapsed_ns,
+rank,thread,pid,cpu_start,cpu_stop,migrated,valid
 ```
 
 | Column | Type | Meaning |
 |--------|------|---------|
 | `seq` | uint | Per-file row counter (1-based) |
-| `suite` | string | `npb-mpi`, `npb-omp`, or `lmbench` |
-| `benchmark` | string | e.g. `is`, `cg`, `lat_syscall` |
-| `class` | string | NPB class letter (`S`…`E`); often `X` / empty for lmbench |
-| `test_tag` | string | Optional sub-test label (may be empty) |
 | `region_id` | int | Timed region index (NPB timer slot, or 0 for lmbench) |
 | `loc_id` | int | Call-site id within the same `region_id` (NPB); 0 for lmbench |
-| `timer` | string | Build-time timer name (`TACVAR_TIMER`) |
 | `raw_start` / `raw_stop` | uint64 | Backend-native tick / timestamp at begin/end |
 | `elapsed_ns` | int64 | Duration in nanoseconds (`TACVAR_TIMER_DELTA_NS`); always ≥ 0 |
 | `rank` | int | MPI rank, else 0 |
@@ -209,8 +220,8 @@ migrated,valid
 Example with `cpu-cycles,instructions`:
 
 ```text
-seq,suite,benchmark,class,test_tag,region_id,loc_id,timer,raw_start,raw_stop,elapsed_ns,rank,thread,pid,cpu_start,cpu_stop,migrated,valid,counter_backend,cpu-cycles_start,cpu-cycles_stop,cpu-cycles_delta,instructions_start,instructions_stop,instructions_delta
-1,npb-omp,cg,S,,0,1,clock_gettime,123...,456...,789,0,0,12345,3,3,0,1,perf_event_open,1000,2500,1500,8000,12000,4000
+seq,region_id,loc_id,raw_start,raw_stop,elapsed_ns,rank,thread,pid,cpu_start,cpu_stop,migrated,valid,counter_backend,cpu-cycles_start,cpu-cycles_stop,cpu-cycles_delta,instructions_start,instructions_stop,instructions_delta
+1,0,1,123...,456...,789,0,0,12345,3,3,0,1,perf_event_open,1000,2500,1500,8000,12000,4000
 ```
 
 Notes:
