@@ -65,8 +65,9 @@ tacvar_clean:
 	- rm -f common/tacvar_npb.o common/c_timers.o
 	- rm -rf config/tacvar_build_*
 
+# NAS: drop site config. Next `make <bench>` copies make.def.template → make.def.
 veryclean: clean tacvar_clean
-	- rm -f config/make.def config/suite.def 
+	- rm -f config/make.def config/suite.def
 	- rm -f bin/sp.* bin/lu.* bin/mg.* bin/ft.* bin/bt.* bin/is.* 
 	- rm -f bin/ep.* bin/cg.* bin/dt.*
 

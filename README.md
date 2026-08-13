@@ -133,7 +133,9 @@ Change conf → **rebuild** the suite. Runtime does not switch backends. Invalid
 
 Put MPI/PAPI on `PATH` / `LD_LIBRARY_PATH` (and set `PAPI_HOME` when needed) before building.
 
-**NPB-MPI / NPB-OMP** (after `config/make.def` is present):
+**NPB-MPI / NPB-OMP** 
+
+`make veryclean` removes `config/make.def`; the next build copies it from `make.def.template`
 
 ```bash
 # Edit the suite tacvar.conf, then:

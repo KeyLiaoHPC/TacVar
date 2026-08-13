@@ -76,29 +76,40 @@ ${BENCHMARKU}: default
 .SUFFIXES:
 .SUFFIXES: .c .h .f90 .f .o
 
-$(TACVAR_GEN_H) $(TACVAR_GEN_MK): $(TACVAR_CONF) $(TACVAR_ROOT)/tools/gen_config.py
+# After veryclean (or a missing file): copy template once. No prerequisites, so
+# an existing make.def is never overwritten. GNU make then restarts with CC set.
+../config/make.def:
+	@echo "NOTE: config/make.def missing; copying from make.def.template"
+	cp ../config/make.def.template $@
+
+$(TACVAR_GEN_H) $(TACVAR_GEN_MK): $(TACVAR_CONF) $(TACVAR_ROOT)/tools/gen_config.py ../config/make.def
 	@mkdir -p $(TACVAR_OUTDIR)
 	python3 $(TACVAR_ROOT)/tools/gen_config.py --conf $(TACVAR_CONF) \
-		--compiler $(CC) --consumer npb-omp --outdir $(TACVAR_OUTDIR) \
+		--compiler "$(CC)" --consumer npb-omp --outdir $(TACVAR_OUTDIR) \
 		--measure-root $(TACVAR_ROOT) \
 		--papi-inc $(PAPI_HOME)/include --papi-lib $(PAPI_HOME)/lib
 
 $(TACVAR_LIB): $(TACVAR_GEN_H)
 	$(MAKE) -C $(TACVAR_ROOT) CONF=$(TACVAR_CONF) CONSUMER=npb-omp \
-		OUTDIR=$(TACVAR_OUTDIR) CC=$(CC) \
+		OUTDIR=$(TACVAR_OUTDIR) CC="$(CC)" \
 		PAPI_INC=$(PAPI_HOME)/include PAPI_LIB=$(PAPI_HOME)/lib
 
 F_LIB += $(COMMON)/tacvar_npb.o $(TACVAR_LIB) $(TACVAR_EXTRA_LIBS)
 C_LIB += $(COMMON)/tacvar_npb.o $(TACVAR_LIB) $(TACVAR_EXTRA_LIBS)
-# Skip include remake when only cleaning (avoids regenerating then deleting).
-ifeq (,$(filter tacvar_clean,$(MAKECMDGOALS)))
+# Skip include remake when cleaning, or when make.def is absent (CC unset).
+ifeq (,$(filter clean veryclean tacvar_clean,$(MAKECMDGOALS)))
+ifneq ($(wildcard ../config/make.def),)
 -include $(TACVAR_GEN_MK)
 ifneq ($(strip $(TACVAR_MEASURE_LDFLAGS)),)
 TACVAR_EXTRA_LIBS += $(TACVAR_MEASURE_LDFLAGS)
 endif
 endif
+endif
 
-${PROGRAM}: $(TACVAR_LIB) ${COMMON}/tacvar_npb.o
+$(BINDIR):
+	mkdir -p $(BINDIR)
+
+${PROGRAM}: $(TACVAR_LIB) ${COMMON}/tacvar_npb.o | $(BINDIR)
 
 # After editing tacvar.conf: make tacvar_clean && make <bench> CLASS=...
 .PHONY: tacvar_clean

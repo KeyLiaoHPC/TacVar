@@ -20,3 +20,7 @@ clean:
 	-rm -f setparams setparams.h npbparams.h
 	-rm -f *~ *.o
 
+../config/make.def:
+	@echo "NOTE: config/make.def missing; copying from make.def.template"
+	cp ../config/make.def.template $@
+
