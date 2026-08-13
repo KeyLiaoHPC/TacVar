@@ -167,8 +167,15 @@ if [[ "$MODE" == "--build-only" ]]; then
   exit 0
 fi
 
+if [[ "$MODE" == "--tf-smoke" ]]; then
+  bash "$ROOT/NPB3.4-MPI/scripts/test_tf_smoke.sh"
+  check_protected
+  echo "NPB TF smoke OK"
+  exit 0
+fi
+
 if [[ "$MODE" != "--run-smoke" ]]; then
-  echo "Usage: $0 [--build-only|--run-smoke]"
+  echo "Usage: $0 [--build-only|--run-smoke|--tf-smoke]"
   exit 2
 fi
 
@@ -245,6 +252,9 @@ elif [[ "$ARCH" == "aarch64" ]]; then
   (cd "$ROOT/NPB3.4-OMP" && make CG CLASS=S)
   (cd "$ROOT/NPB3.4-MPI" && make IS CLASS=S)
 fi
+
+echo "=== NPB-MPI TF smoke: CG Class S, np=2 ==="
+bash "$ROOT/NPB3.4-MPI/scripts/test_tf_smoke.sh"
 
 check_protected
 echo "NPB smoke OK"

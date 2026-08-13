@@ -1,3 +1,4 @@
+# PROGRAM may be renamed to *_tf.x when TACVAR_TF_SAMPLING_MODE=ON (see below).
 PROGRAM  = $(BINDIR)/$(BENCHMARK).$(CLASS).x
 FCOMPILE = $(MPIFC) -c $(FMPI_INC) $(FFLAGS)
 CCOMPILE = $(MPICC) -c $(CMPI_INC) $(CFLAGS)
@@ -9,7 +10,7 @@ CCOMPILE = $(MPICC) -c $(CMPI_INC) $(CFLAGS)
 # from the setparams back to the make program, which isn't easy. 
 CLASS=U
 
-default:: ${PROGRAM}
+.DEFAULT_GOAL := npb_default
 
 # This makes sure the configuration utility setparams 
 # is up to date. 
@@ -31,11 +32,30 @@ TACVAR_OUTDIR  ?= $(abspath ../config/tacvar_build_$(shell uname -m))
 TACVAR_GEN_H   = $(TACVAR_OUTDIR)/tacvar_generated_config.h
 TACVAR_GEN_MK  = $(TACVAR_OUTDIR)/tacvar_generated_config.mk
 TACVAR_LIB     = $(TACVAR_OUTDIR)/libtacvar_measure.a
+TACVAR_TF_NSAMP_H = $(TACVAR_OUTDIR)/tacvar_tf_nsamp.h
 PAPI_HOME      ?= /home/hpckey/01-App/papi-7.1.0
 TACVAR_EXTRA_LIBS ?=
 TACVAR_CFLAGS = -D_GNU_SOURCE -I$(TACVAR_ROOT)/include -I$(TACVAR_OUTDIR) -I$(COMMON) \
 	-I$(TACVAR_ROOT)/timers -I$(TACVAR_ROOT)/counters -I$(TACVAR_ROOT) \
+	-I$(TACVAR_ROOT)/gauges \
 	-DTACVAR_HAS_GENERATED_CONFIG -include $(TACVAR_GEN_H)
+
+# Skip include remake when cleaning, or when make.def is absent (MPICC unset).
+ifeq (,$(filter clean veryclean tacvar_clean,$(MAKECMDGOALS)))
+ifneq ($(wildcard ../config/make.def),)
+-include $(TACVAR_GEN_MK)
+ifneq ($(strip $(TACVAR_MEASURE_LDFLAGS)),)
+TACVAR_EXTRA_LIBS += $(TACVAR_MEASURE_LDFLAGS)
+endif
+endif
+endif
+
+ifeq ($(TACVAR_TF_SAMPLING_MODE),ON)
+PROGRAM = $(BINDIR)/$(BENCHMARK).$(CLASS)_tf.x
+TACVAR_NPB_OBJ = $(COMMON)/tacvar_npb_tf.o
+else
+TACVAR_NPB_OBJ = $(COMMON)/tacvar_npb.o
+endif
 
 ${COMMON}/${RAND}.o: ${COMMON}/${RAND}.f90
 	cd ${COMMON}; ${FCOMPILE} ${RAND}.f90
@@ -62,6 +82,10 @@ ${COMMON}/c_timers.o: ${COMMON}/c_timers.c ../config/make.def ${TACVAR_GEN_H}
 
 ${COMMON}/tacvar_npb.o: ${COMMON}/tacvar_npb.c ../config/make.def ${TACVAR_GEN_H}
 	cd ${COMMON}; ${CCOMPILE} $(TACVAR_CFLAGS) tacvar_npb.c
+
+${COMMON}/tacvar_npb_tf.o: ${COMMON}/tacvar_npb.c ../config/make.def ${TACVAR_GEN_H} $(TACVAR_TF_NSAMP_H)
+	cd ${COMMON}; $(MPICC) -c $(CMPI_INC) $(CFLAGS) $(TACVAR_CFLAGS) \
+		-o tacvar_npb_tf.o tacvar_npb.c
 
 # Normally setparams updates npbparams.h only if the settings (CLASS)
 # have changed. However, we also want to update if the compile options
@@ -96,28 +120,51 @@ $(TACVAR_LIB): $(TACVAR_GEN_H)
 		OUTDIR=$(TACVAR_OUTDIR) CC="$(MPICC)" \
 		PAPI_INC=$(PAPI_HOME)/include PAPI_LIB=$(PAPI_HOME)/lib
 
+ifeq ($(TACVAR_TF_SAMPLING_MODE),ON)
+$(TACVAR_TF_NSAMP_H): $(TACVAR_TF_DATA_ROOT)/median.csv $(TACVAR_ROOT)/tools/gen_tf_nsamp.py
+	python3 $(TACVAR_ROOT)/tools/gen_tf_nsamp.py \
+		--median $(TACVAR_TF_DATA_ROOT)/median.csv \
+		--nspg $(TACVAR_TF_NSPG) \
+		--nspg-file $(TACVAR_TF_DATA_ROOT)/nspg.txt \
+		--out-h $(TACVAR_TF_NSAMP_H) \
+		--kernel $(BENCHMARKU) --klass $(CLASS)
+endif
+
 # Inject TacVar into every benchmark link without editing per-bench Makefiles.
-FMPI_LIB += $(COMMON)/tacvar_npb.o $(TACVAR_LIB) $(TACVAR_EXTRA_LIBS)
-CMPI_LIB += $(COMMON)/tacvar_npb.o $(TACVAR_LIB) $(TACVAR_EXTRA_LIBS)
-# Skip include remake when cleaning, or when make.def is absent (MPICC unset).
-ifeq (,$(filter clean veryclean tacvar_clean,$(MAKECMDGOALS)))
-ifneq ($(wildcard ../config/make.def),)
--include $(TACVAR_GEN_MK)
-ifneq ($(strip $(TACVAR_MEASURE_LDFLAGS)),)
-TACVAR_EXTRA_LIBS += $(TACVAR_MEASURE_LDFLAGS)
-endif
-endif
-endif
+FMPI_LIB += $(TACVAR_NPB_OBJ) $(TACVAR_LIB) $(TACVAR_EXTRA_LIBS)
+CMPI_LIB += $(TACVAR_NPB_OBJ) $(TACVAR_LIB) $(TACVAR_EXTRA_LIBS)
 
 # Ensure tacvar objects exist before linking PROGRAM
 $(BINDIR):
 	mkdir -p $(BINDIR)
 
-${PROGRAM}: $(TACVAR_LIB) ${COMMON}/tacvar_npb.o | $(BINDIR)
+${PROGRAM}: $(TACVAR_LIB) $(TACVAR_NPB_OBJ) | $(BINDIR)
+
+.PHONY: npb_default
+npb_default: $(PROGRAM)
+ifeq ($(TACVAR_TF_SAMPLING_MODE),ON)
+npb_default: $(BINDIR)/filt.x
+endif
+default:: npb_default
+
+FILT_CC ?= cc
+$(BINDIR)/filt.x: ${COMMON}/filt.c ${COMMON}/filt.h | $(BINDIR)
+	$(FILT_CC) -O2 -std=c99 -Wall -o $@ ${COMMON}/filt.c -lm
+
+.PHONY: filt
+filt: $(BINDIR)/filt.x
+
+$(BINDIR)/test_nspg.x: ${COMMON}/test_nspg.c $(TACVAR_GEN_H) | $(BINDIR)
+	$(MPICC) $(CMPI_INC) -O2 -std=c99 -Wall $(TACVAR_CFLAGS) \
+		$(TACVAR_MEASURE_CFLAGS) \
+		-o $@ ${COMMON}/test_nspg.c $(TACVAR_MEASURE_LDFLAGS)
+
+.PHONY: nspg
+nspg: $(BINDIR)/test_nspg.x
 
 # After editing tacvar.conf: make tacvar_clean && make <bench> CLASS=...
 .PHONY: tacvar_clean
 tacvar_clean:
-	- rm -f $(COMMON)/tacvar_npb.o $(COMMON)/c_timers.o
+	- rm -f $(COMMON)/tacvar_npb.o $(COMMON)/tacvar_npb_tf.o \
+		$(COMMON)/c_timers.o
 	- rm -rf $(TACVAR_OUTDIR)
-

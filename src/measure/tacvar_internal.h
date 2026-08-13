@@ -20,7 +20,7 @@ typedef struct tacvar_state {
     pid_t owner_pid;
     tacvar_context_t ctx;
     char data_dir[TACVAR_DIR_NAME_MAX];
-    char kernel_dir[TACVAR_DIR_NAME_MAX]; /**< data_dir/Kernel.CLASS */
+    char kernel_dir[TACVAR_DIR_NAME_MAX]; /**< data_dir/Kernel.CLASS[_tag] */
     char short_host[TACVAR_NAME_MAX];
     char csv_path[TACVAR_PATH_MAX];
     FILE *csv_fp;

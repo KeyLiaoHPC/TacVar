@@ -103,6 +103,30 @@ def detect_arch(compiler: str) -> str:
     raise SystemExit(f"unsupported target arch from {compiler}")
 
 
+def parse_tf_mode(s: str) -> bool:
+    v = (s or "OFF").strip().upper()
+    if v in ("ON", "1", "TRUE", "YES"):
+        return True
+    if v in ("OFF", "0", "FALSE", "NO", ""):
+        return False
+    raise SystemExit(f"unknown TACVAR_TF_SAMPLING_MODE={s}")
+
+
+def resolve_tf_root(raw: str, conf_dir: Path) -> str:
+    if not raw:
+        return ""
+    p = Path(raw)
+    if not p.is_absolute():
+        p = (conf_dir / raw).resolve()
+    else:
+        p = p.resolve()
+    return str(p)
+
+
+def c_string(s: str) -> str:
+    return s.replace("\\", "\\\\").replace('"', '\\"')
+
+
 def split_names(s: str) -> list[str]:
     if not s:
         return []
@@ -180,6 +204,9 @@ def emit_header(
     nstp: int,
     output_root: str,
     measure_root: Path,
+    tf_on: bool = False,
+    tf_root: str = "",
+    tf_nspg: float = 0.0,
 ) -> None:
     resolved = resolve_native(timer, consumer)
     prefix = TIMER_PREFIX[timer if timer == "native" else resolved]
@@ -222,6 +249,9 @@ def emit_header(
         f"#define TACVAR_COUNTER_COUNT {count}",
         f"#define TACVAR_NSTP {nstp}",
         f'#define TACVAR_OUTPUT_ROOT_DEFAULT "{output_root}"',
+        f"#define TACVAR_TF_SAMPLING {1 if tf_on else 0}",
+        f'#define TACVAR_TF_DATA_ROOT "{c_string(tf_root)}"',
+        f"#define TACVAR_TF_NSPG {tf_nspg}",
         "",
     ]
     if names:
@@ -264,6 +294,9 @@ def emit_mk(
     papi_inc: str,
     papi_lib: str,
     measure_root: Path,
+    tf_on: bool = False,
+    tf_root: str = "",
+    tf_nspg: float = 0.0,
 ) -> None:
     resolved = resolve_native(timer, consumer)
     objs = ["tacvar_measure.o", "tacvar_csv.o"]
@@ -273,6 +306,7 @@ def emit_mk(
         f"-I{measure_root / 'timers'}",
         f"-I{measure_root / 'counters'}",
         f"-I{measure_root / 'events'}",
+        f"-I{measure_root / 'gauges'}",
         "-DTACVAR_HAS_GENERATED_CONFIG=1",
     ]
     ldflags: list[str] = []
@@ -317,6 +351,9 @@ def emit_mk(
         f"TACVAR_MEASURE_CFLAGS := {' '.join(cflags)}",
         f"TACVAR_MEASURE_LDFLAGS := {' '.join(ldflags)}",
         f"TACVAR_MEASURE_ROOT := {measure_root}",
+        f"TACVAR_TF_SAMPLING_MODE := {'ON' if tf_on else 'OFF'}",
+        f"TACVAR_TF_DATA_ROOT := {tf_root}",
+        f"TACVAR_TF_NSPG := {tf_nspg}",
         "",
     ]
     out_mk.write_text("\n".join(lines))
@@ -342,6 +379,17 @@ def main() -> None:
     arch = detect_arch(args.compiler)
     timer, counter, names, count, nstp = validate(cfg, args.consumer, arch)
     output_root = cfg.get("TACVAR_OUTPUT_ROOT", ".")
+    tf_on = parse_tf_mode(cfg.get("TACVAR_TF_SAMPLING_MODE", "OFF"))
+    tf_root = resolve_tf_root(cfg.get("TACVAR_TF_DATA_ROOT", ""), conf.parent)
+    try:
+        tf_nspg = float(cfg.get("TACVAR_TF_NSPG", "0") or "0")
+    except ValueError:
+        raise SystemExit("TACVAR_TF_NSPG must be a number")
+
+    if tf_on and args.consumer != "npb-mpi":
+        raise SystemExit("TACVAR_TF_SAMPLING_MODE=ON is only supported for npb-mpi")
+    if tf_on and not tf_root:
+        raise SystemExit("TACVAR_TF_SAMPLING_MODE=ON requires TACVAR_TF_DATA_ROOT")
 
     # PAPI path required when selected
     if counter == "papi_read" or timer == "papi_get_real_nsec":
@@ -360,6 +408,9 @@ def main() -> None:
         nstp,
         output_root,
         measure_root,
+        tf_on,
+        tf_root,
+        tf_nspg,
     )
     emit_mk(
         outdir / "tacvar_generated_config.mk",
@@ -370,8 +421,15 @@ def main() -> None:
         args.papi_inc or os.environ.get("PAPI_INC", ""),
         args.papi_lib or os.environ.get("PAPI_LIB", ""),
         measure_root,
+        tf_on,
+        tf_root,
+        tf_nspg,
     )
-    print(f"generated config for {args.consumer}/{arch} timer={timer} counter={counter}")
+    extra = f" tf={('ON' if tf_on else 'OFF')}"
+    print(
+        f"generated config for {args.consumer}/{arch} timer={timer} "
+        f"counter={counter}{extra}"
+    )
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@
  *
  * Layout: DATA_ROOT/timer_info.csv
  *         DATA_ROOT/Kernel.CLASS/<short_host>_rRRRR_tTTTT_pPID.csv
+ *         DATA_ROOT/Kernel.CLASS_tf/   (in-situ gauge sampling)
  */
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
@@ -114,11 +115,16 @@ int tacvar_prepare_kernel_dir(tacvar_state_t *st)
 {
     const char *bench = st->ctx.benchmark ? st->ctx.benchmark : "bench";
     const char *klass = st->ctx.klass ? st->ctx.klass : "X";
+    const char *tag = st->ctx.test_tag;
     int rc;
 
     fill_short_host(st->short_host, sizeof(st->short_host));
-    snprintf(st->kernel_dir, sizeof(st->kernel_dir), "%s/%s.%s",
-             st->data_dir, bench, klass);
+    if (tag && tag[0])
+        snprintf(st->kernel_dir, sizeof(st->kernel_dir), "%s/%s.%s_%s",
+                 st->data_dir, bench, klass, tag);
+    else
+        snprintf(st->kernel_dir, sizeof(st->kernel_dir), "%s/%s.%s",
+                 st->data_dir, bench, klass);
     rc = mkdir(st->kernel_dir, 0755);
     if (rc != 0 && errno != EEXIST)
         return -errno;
