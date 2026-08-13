@@ -175,8 +175,9 @@ common = dict(
     bars=[-15, -5, -1, 1, 5, 15],
 )
 hfigs = tvvis.draw_histogram_npb_mpi(**common)
-pfigs = tvvis.draw_pdf_npb_mpi(**common, overlap=False)
-cfigs = tvvis.draw_cdf_npb_mpi(**common, overlap=False)
+pfigs = tvvis.draw_pdf_npb_mpi(**common, overlap=False, xlim=None, ylim=None)
+cfigs = tvvis.draw_cdf_npb_mpi(**common, overlap=False, xlim=None, ylim=None)
+# xlim/ylim = (min, max) pins the main FOM / density-or-CDF axes; None = auto
 ```
 
 | Argument | Default | Meaning |
@@ -195,6 +196,8 @@ cfigs = tvvis.draw_cdf_npb_mpi(**common, overlap=False)
 | `ref_base` | `"all"` | How that sample set is aggregated: `all` / `x` / `y` (per cell, then pooled). PDF/CDF twin axis always uses one pooled ref |
 | `bars` | `[-15, -5, -1, 1, 5, 15]` | Percent-deviation cut points. PDF/CDF: top-axis ticks. Ignored when `overlap=True` |
 | `overlap` | `False` | PDF/CDF only. If True, overlay listed roots on one axes per `(region_id, loc_id)` and ignore `bars` |
+| `xlim` | `None` | PDF/CDF only. `(min, max)` for the main FOM x-axis (`min <= x <= max`). `None` = auto |
+| `ylim` | `None` | PDF/CDF only. `(min, max)` for the main y-axis (`min <= y <= max`). `None` = auto (PDF autoscale; CDF `(0.0, 1.02)`) |
 
 Returns a `list` of `matplotlib.figure.Figure`. `xrange`, `ref_key`, `ref_section_base`, `ref_base`, and `bars` follow the heatmap sections above. `ref_base='y'` still forms per-rank refs for each cell, then those ratios are flattened (histogram only). PDF and CDF plot raw FOM values; the percent top axis uses one pooled `ref_key` statistic.
 
@@ -208,12 +211,12 @@ Discrete counts in the same `bars` bins as the heatmap (`len(bars)+1` after `±i
 
 ### PDF (`draw_pdf_npb_mpi`)
 
-One density histogram (`numpy.histogram(..., density=True)` + stairs) of the FOM column over a finite x-range (data min/max, padded to include the finite `bars` mapped through the pooled ref). Bottom x = FOM; top x = percent-vs-ref `bars`. Light GWR bands and dashed guides are drawn in FOM coordinates. Y = probability density.
+One density histogram (`numpy.histogram(..., density=True)` + stairs) of the FOM column over a finite x-range (data min/max, padded to include the finite `bars` mapped through the pooled ref). Bottom x = FOM; top x = percent-vs-ref `bars`. Light GWR bands and dashed guides are drawn in FOM coordinates. Y = probability density. Optional `xlim=(min, max)` pins the main FOM x-axis and is also the PDF histogram `range`; optional `ylim=(min, max)` pins the density y-axis. `None` keeps the auto limits.
 
 With `overlap=True`, all listed roots share one axes per `(region_id, loc_id)` (tab10 colors, light-alpha fill, legend = data-directory basename). `bars` is ignored: no twin axis and no GWR.
 
 ### CDF (`draw_cdf_npb_mpi`)
 
-One empirical CDF of the FOM column (`sort` + `arange(1, n+1)/n`, step). Same dual x-axis and `bars` guides as the PDF when `overlap=False`. Y in `[0, 1]`. A dotted horizontal line marks cumulative probability 0.5.
+One empirical CDF of the FOM column (`sort` + `arange(1, n+1)/n`, step). Same dual x-axis and `bars` guides as the PDF when `overlap=False`. Y in `[0, 1]` by default (`ylim` default `(0.0, 1.02)`). A dotted horizontal line marks cumulative probability 0.5. Optional `xlim=(min, max)` pins the main FOM x-axis; optional `ylim=(min, max)` pins the cumulative-probability y-axis. `None` keeps the auto limits.
 
 `overlap=True` overlays roots as colored step lines on one axes per `(region_id, loc_id)` and ignores `bars`. The 0.5 guideline remains.

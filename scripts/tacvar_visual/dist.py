@@ -108,6 +108,23 @@ def _data_xlim(arrays: Sequence[np.ndarray]) -> tuple:
     return _value_xlim(np.asarray([lo, hi], dtype=float))
 
 
+def _resolve_axis_limit(
+    user: Optional[tuple],
+    auto: Optional[tuple],
+) -> Optional[tuple]:
+    if user is None:
+        return auto
+    if len(user) != 2:
+        raise ValueError("axis limit must be a (min, max) tuple")
+    lo = float(user[0])
+    hi = float(user[1])
+    if lo > hi:
+        raise ValueError(
+            f"axis limit min must be <= max, got ({lo}, {hi})"
+        )
+    return (lo, hi)
+
+
 def _paint_gwr_guides(
     ax,
     bars: Sequence[float],
@@ -527,6 +544,8 @@ def draw_pdf_npb_mpi(
     ref_base: str = "all",
     bars: Optional[Sequence[float]] = None,
     overlap: bool = False,
+    xlim: Optional[tuple] = None,
+    ylim: Optional[tuple] = None,
 ) -> List[Figure]:
     """
     Draw a pooled PDF of FOM values for NPB-MPI TacVar CSVs.
@@ -573,6 +592,13 @@ def draw_pdf_npb_mpi(
         If False (default), one figure per data_root. If True, overlay all
         listed roots on one axes per (region_id, loc_id) and ignore
         ``bars``.
+    xlim
+        Optional ``(min, max)`` for the main FOM x-axis (``min <= x <= max``).
+        ``None`` (default) uses the auto range from data (and ``bars`` when
+        ``overlap`` is False). Also used as the PDF histogram ``range``.
+    ylim
+        Optional ``(min, max)`` for the main density y-axis
+        (``min <= y <= max``). ``None`` (default) leaves matplotlib autoscale.
 
     Returns
     -------
@@ -598,18 +624,23 @@ def draw_pdf_npb_mpi(
     with plt.rc_context(_ACADEMIC_RC):
         if overlap:
             for group in _group_views_by_region_loc(views):
-                xlim = _data_xlim([v.value_flat for v in group])
+                xlim_used = _resolve_axis_limit(
+                    xlim, _data_xlim([v.value_flat for v in group])
+                )
+                ylim_used = _resolve_axis_limit(ylim, None)
                 fig, ax = _new_figure()
                 for i, view in enumerate(group):
                     _draw_pdf_one(
                         ax,
                         view,
-                        xlim,
+                        xlim_used,
                         color=_tab10_color(i),
                         fill=False,
                         label=view.run_label,
                     )
-                ax.set_xlim(xlim)
+                ax.set_xlim(xlim_used)
+                if ylim_used is not None:
+                    ax.set_ylim(ylim_used)
                 ax.set_xlabel(group[0].fom)
                 ax.set_ylabel("probability density")
                 ax.set_title(_title(group[0], "pdf", include_run=False))
@@ -621,25 +652,30 @@ def draw_pdf_npb_mpi(
             n_bins = len(edges) - 1
             cmap = _green_white_red_cmap(n_bins, white_idx)
             for view in views:
-                xlim = _value_xlim(view.value_flat, bars_used, view.ref)
+                xlim_used = _resolve_axis_limit(
+                    xlim, _value_xlim(view.value_flat, bars_used, view.ref)
+                )
+                ylim_used = _resolve_axis_limit(ylim, None)
                 fig, ax = _new_figure()
                 value_bars = _pct_bars_to_values(bars_used, view.ref)
                 _paint_gwr_guides(
-                    ax, value_bars, cmap, n_bins, xlim, zero=view.ref
+                    ax, value_bars, cmap, n_bins, xlim_used, zero=view.ref
                 )
                 _draw_pdf_one(
                     ax,
                     view,
-                    xlim,
+                    xlim_used,
                     color="0.25",
                     fill=True,
                     label=None,
                 )
-                ax.set_xlim(xlim)
+                ax.set_xlim(xlim_used)
+                if ylim_used is not None:
+                    ax.set_ylim(ylim_used)
                 ax.set_xlabel(view.fom)
                 ax.set_ylabel("probability density")
                 ax.set_title(_title(view, "pdf", include_run=multi_root))
-                _attach_percent_top_axis(ax, xlim, view.ref, bars_used)
+                _attach_percent_top_axis(ax, xlim_used, view.ref, bars_used)
                 fig.tight_layout()
                 figures.append(fig)
 
@@ -663,6 +699,8 @@ def draw_cdf_npb_mpi(
     ref_base: str = "all",
     bars: Optional[Sequence[float]] = None,
     overlap: bool = False,
+    xlim: Optional[tuple] = None,
+    ylim: Optional[tuple] = None,
 ) -> List[Figure]:
     """
     Draw a pooled empirical CDF of FOM values for NPB-MPI TacVar CSVs.
@@ -709,6 +747,13 @@ def draw_cdf_npb_mpi(
         If False (default), one figure per data_root. If True, overlay all
         listed roots on one axes per (region_id, loc_id) and ignore
         ``bars``.
+    xlim
+        Optional ``(min, max)`` for the main FOM x-axis (``min <= x <= max``).
+        ``None`` (default) uses the auto range from data (and ``bars`` when
+        ``overlap`` is False).
+    ylim
+        Optional ``(min, max)`` for the main cumulative-probability y-axis
+        (``min <= y <= max``). ``None`` (default) uses ``(0.0, 1.02)``.
 
     Returns
     -------
@@ -734,7 +779,10 @@ def draw_cdf_npb_mpi(
     with plt.rc_context(_ACADEMIC_RC):
         if overlap:
             for group in _group_views_by_region_loc(views):
-                xlim = _data_xlim([v.value_flat for v in group])
+                xlim_used = _resolve_axis_limit(
+                    xlim, _data_xlim([v.value_flat for v in group])
+                )
+                ylim_used = _resolve_axis_limit(ylim, (0.0, 1.02))
                 fig, ax = _new_figure()
                 for i, view in enumerate(group):
                     xs = np.sort(view.value_flat)
@@ -749,8 +797,8 @@ def draw_cdf_npb_mpi(
                         label=view.run_label,
                     )
                 ax.axhline(0.5, color="0.5", linestyle=":", linewidth=0.8, zorder=3)
-                ax.set_xlim(xlim)
-                ax.set_ylim(0.0, 1.02)
+                ax.set_xlim(xlim_used)
+                ax.set_ylim(ylim_used)
                 ax.set_xlabel(group[0].fom)
                 ax.set_ylabel("cumulative probability")
                 ax.set_title(_title(group[0], "cdf", include_run=False))
@@ -762,22 +810,25 @@ def draw_cdf_npb_mpi(
             n_bins = len(edges) - 1
             cmap = _green_white_red_cmap(n_bins, white_idx)
             for view in views:
-                xlim = _value_xlim(view.value_flat, bars_used, view.ref)
+                xlim_used = _resolve_axis_limit(
+                    xlim, _value_xlim(view.value_flat, bars_used, view.ref)
+                )
+                ylim_used = _resolve_axis_limit(ylim, (0.0, 1.02))
                 xs = np.sort(view.value_flat)
                 ys = np.arange(1, xs.size + 1, dtype=float) / float(xs.size)
                 fig, ax = _new_figure()
                 value_bars = _pct_bars_to_values(bars_used, view.ref)
                 _paint_gwr_guides(
-                    ax, value_bars, cmap, n_bins, xlim, zero=view.ref
+                    ax, value_bars, cmap, n_bins, xlim_used, zero=view.ref
                 )
                 ax.step(xs, ys, where="post", color="black", linewidth=1.2, zorder=4)
                 ax.axhline(0.5, color="0.5", linestyle=":", linewidth=0.8, zorder=3)
-                ax.set_xlim(xlim)
-                ax.set_ylim(0.0, 1.02)
+                ax.set_xlim(xlim_used)
+                ax.set_ylim(ylim_used)
                 ax.set_xlabel(view.fom)
                 ax.set_ylabel("cumulative probability")
                 ax.set_title(_title(view, "cdf", include_run=multi_root))
-                _attach_percent_top_axis(ax, xlim, view.ref, bars_used)
+                _attach_percent_top_axis(ax, xlim_used, view.ref, bars_used)
                 fig.tight_layout()
                 figures.append(fig)
 
