@@ -61,22 +61,39 @@ check_csv_dir() {
   local dir
   dir=$(ls -dt "$cwd"/data_????????T?????? 2>/dev/null | head -1 || true)
   [[ -n "$dir" ]] || { echo "ERROR: no data_* under $cwd"; exit 1; }
+  local info
+  info=$(find "$dir" -name 'timer_info.csv' | head -1 || true)
+  [[ -n "$info" ]] || { echo "ERROR: no timer_info.csv under $dir"; exit 1; }
+  head -1 "$info" | grep -q 'region_id,nloc,name' \
+    || { echo "ERROR: bad timer_info header"; exit 1; }
   local csvs
-  mapfile -t csvs < <(find "$dir" -name '*.csv' | sort)
-  [[ ${#csvs[@]} -ge 1 ]] || { echo "ERROR: no CSV in $dir"; exit 1; }
+  mapfile -t csvs < <(find "$dir" -name '*.csv' ! -name 'timer_info.csv' | sort)
+  [[ ${#csvs[@]} -ge 1 ]] || { echo "ERROR: no measurement CSV in $dir"; exit 1; }
+  # Expect DATA_ROOT/Kernel.CLASS/<short_host>_r*_t*_p*.csv
+  echo "${csvs[0]}" | grep -E '/[^/]+\.[^/]+/[^/]+_r[0-9]+_t[0-9]+_p[0-9]+\.csv$' >/dev/null \
+    || { echo "ERROR: unexpected CSV path layout: ${csvs[0]}"; exit 1; }
   local hdr
   hdr=$(head -1 "${csvs[0]}")
   echo "$hdr" | grep -q 'elapsed_ns' || { echo "ERROR: bad CSV header"; exit 1; }
+  echo "$hdr" | grep -q 'loc_id' || { echo "ERROR: missing loc_id column"; exit 1; }
   echo "$hdr" | grep -q 'timer' || { echo "ERROR: missing timer column"; exit 1; }
-  # non-negative elapsed
-  awk -F, 'NR>1 && $10+0 < 0 { bad=1 } END { exit bad+0 }' "${csvs[@]}" \
+  # non-negative elapsed (column 11 after loc_id insert)
+  awk -F, 'NR>1 && $11+0 < 0 { bad=1 } END { exit bad+0 }' "${csvs[@]}" \
     || { echo "ERROR: negative elapsed_ns"; exit 1; }
   if [[ -n "$expect_ranks" ]]; then
     local ranks
-    ranks=$(awk -F, 'NR>1 {print $11}' "${csvs[@]}" | sort -nu | tr '\n' ',')
+    ranks=$(awk -F, 'NR>1 {print $12}' "${csvs[@]}" | sort -nu | tr '\n' ',')
     echo "CSV ranks: $ranks (expect 0..$((expect_ranks-1)))"
   fi
-  echo "CSV OK: $dir (${#csvs[@]} files)"
+  # IS: region 1 (rcomp/T_RANK) should have nloc>=3 when present
+  if [[ "$(basename "$(dirname "${csvs[0]}")")" == is.* ]]; then
+    awk -F, 'NR>1 && $1+0==1 && $2+0<3 { bad=1 } END { exit bad+0 }' "$info" \
+      || { echo "ERROR: IS timer_info region 1 nloc < 3"; exit 1; }
+    local nlocs
+    nlocs=$(awk -F, 'NR>1 && $6+0==1 {print $7}' "${csvs[@]}" | sort -nu | wc -l)
+    [[ "$nlocs" -ge 2 ]] || { echo "ERROR: IS region_id=1 has <2 distinct loc_id in CSV"; exit 1; }
+  fi
+  echo "CSV OK: $dir (${#csvs[@]} files, timer_info=$(basename "$(dirname "$info")")/timer_info.csv)"
 }
 
 apply_temp_conf() {
@@ -158,13 +175,13 @@ fi
 
 echo "=== NPB-OMP smoke: CG Class S, OMP_NUM_THREADS=4 ==="
 rm -rf "$ROOT/NPB3.4-OMP"/data_????????T??????
-( cd "$ROOT/NPB3.4-OMP" && OMP_NUM_THREADS=4 OMP_PROC_BIND=true ./bin/cg.S.x ) | tee /tmp/npb_omp_smoke.out
+( cd "$ROOT/NPB3.4-OMP" && OMP_NUM_THREADS=4 OMP_PROC_BIND=true NPB_TIMER_FLAG=1 ./bin/cg.S.x ) | tee /tmp/npb_omp_smoke.out
 grep -q 'Verification.*=.*SUCCESSFUL' /tmp/npb_omp_smoke.out
 check_csv_dir "$ROOT/NPB3.4-OMP"
 
 echo "=== NPB-MPI smoke: IS Class S, np=4 ==="
 rm -rf "$ROOT/NPB3.4-MPI"/data_????????T??????
-( cd "$ROOT/NPB3.4-MPI" && mpirun -np 4 --bind-to core ./bin/is.S.x ) | tee /tmp/npb_mpi_smoke.out
+( cd "$ROOT/NPB3.4-MPI" && NPB_TIMER_FLAG=1 mpirun -np 4 --bind-to core ./bin/is.S.x ) | tee /tmp/npb_mpi_smoke.out
 grep -q 'SUCCESSFUL' /tmp/npb_mpi_smoke.out
 check_csv_dir "$ROOT/NPB3.4-MPI" 4
 
@@ -176,7 +193,7 @@ if [[ "$ARCH" == "x86_64" ]]; then
   force_rebuild_measure "$ROOT/NPB3.4-OMP"
   (cd "$ROOT/NPB3.4-OMP" && make clean >/dev/null 2>&1 || true; make CG CLASS=S)
   rm -rf "$ROOT/NPB3.4-OMP"/data_????????T??????
-  ( cd "$ROOT/NPB3.4-OMP" && OMP_NUM_THREADS=4 OMP_PROC_BIND=true ./bin/cg.S.x ) | tee /tmp/npb_omp_combo.out
+  ( cd "$ROOT/NPB3.4-OMP" && OMP_NUM_THREADS=4 OMP_PROC_BIND=true NPB_TIMER_FLAG=1 ./bin/cg.S.x ) | tee /tmp/npb_omp_combo.out
   grep -q 'Verification.*=.*SUCCESSFUL' /tmp/npb_omp_combo.out
   check_csv_dir "$ROOT/NPB3.4-OMP"
   restore_conf "$bak"
@@ -189,7 +206,7 @@ if [[ "$ARCH" == "x86_64" ]]; then
   force_rebuild_measure "$ROOT/NPB3.4-MPI"
   (cd "$ROOT/NPB3.4-MPI" && make clean >/dev/null 2>&1 || true; make IS CLASS=S)
   rm -rf "$ROOT/NPB3.4-MPI"/data_????????T??????
-  ( cd "$ROOT/NPB3.4-MPI" && mpirun -np 4 --bind-to core ./bin/is.S.x ) | tee /tmp/npb_mpi_combo.out
+  ( cd "$ROOT/NPB3.4-MPI" && NPB_TIMER_FLAG=1 mpirun -np 4 --bind-to core ./bin/is.S.x ) | tee /tmp/npb_mpi_combo.out
   grep -q 'SUCCESSFUL' /tmp/npb_mpi_combo.out
   check_csv_dir "$ROOT/NPB3.4-MPI" 4
   restore_conf "$bak"
@@ -207,7 +224,7 @@ elif [[ "$ARCH" == "aarch64" ]]; then
   force_rebuild_measure "$ROOT/NPB3.4-OMP"
   (cd "$ROOT/NPB3.4-OMP" && make clean >/dev/null 2>&1 || true; make CG CLASS=S)
   rm -rf "$ROOT/NPB3.4-OMP"/data_????????T??????
-  ( cd "$ROOT/NPB3.4-OMP" && OMP_NUM_THREADS=4 OMP_PROC_BIND=true ./bin/cg.S.x ) | tee /tmp/npb_omp_combo.out
+  ( cd "$ROOT/NPB3.4-OMP" && OMP_NUM_THREADS=4 OMP_PROC_BIND=true NPB_TIMER_FLAG=1 ./bin/cg.S.x ) | tee /tmp/npb_omp_combo.out
   grep -q 'Verification.*=.*SUCCESSFUL' /tmp/npb_omp_combo.out
   check_csv_dir "$ROOT/NPB3.4-OMP"
   restore_conf "$bak"
@@ -221,7 +238,7 @@ elif [[ "$ARCH" == "aarch64" ]]; then
   force_rebuild_measure "$ROOT/NPB3.4-MPI"
   (cd "$ROOT/NPB3.4-MPI" && make clean >/dev/null 2>&1 || true; make IS CLASS=S)
   rm -rf "$ROOT/NPB3.4-MPI"/data_????????T??????
-  ( cd "$ROOT/NPB3.4-MPI" && mpirun -np 4 --bind-to core ./bin/is.S.x ) | tee /tmp/npb_mpi_combo.out
+  ( cd "$ROOT/NPB3.4-MPI" && NPB_TIMER_FLAG=1 mpirun -np 4 --bind-to core ./bin/is.S.x ) | tee /tmp/npb_mpi_combo.out
   grep -q 'SUCCESSFUL' /tmp/npb_mpi_combo.out
   check_csv_dir "$ROOT/NPB3.4-MPI" 4
   restore_conf "$bak"

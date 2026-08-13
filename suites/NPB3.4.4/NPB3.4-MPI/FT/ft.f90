@@ -103,13 +103,13 @@
          call timer_clear(i)
       end do
 
-      call timer_start(T_init)
+      call timer_start(T_init, 1)
       call compute_indexmap(twiddle, dims(1,3), dims(2,3), dims(3,3))
       call compute_initial_conditions(u1, dims(1,1), dims(2,1),  &
      &                                dims(3,1))
       call fft_init (dims(1,1))
       call fft(1, u1, u0)
-      call timer_stop(T_init)
+      call timer_stop(T_init, 1)
       if (me .eq. 0) then
          write(*, 1000) timer_read(T_init)
 1000     format(/' Initialization time =', f12.4/)
@@ -124,8 +124,8 @@
       end do
       call MPI_Barrier(comm_solve, ierr)
 
-      call timer_start(T_total)
-      if (timers_enabled) call timer_start(T_setup)
+      call timer_start(T_total, 1)
+      if (timers_enabled) call timer_start(T_setup, 1)
 
       call compute_indexmap(twiddle, dims(1,3), dims(2,3), dims(3,3))
       call compute_initial_conditions(u1, dims(1,1), dims(2,1),  &
@@ -133,28 +133,28 @@
       call fft_init (dims(1,1))
 
 !      if (timers_enabled) call synchup()
-      if (timers_enabled) call timer_stop(T_setup)
+      if (timers_enabled) call timer_stop(T_setup, 1)
 
-      if (timers_enabled) call timer_start(T_fft)
+      if (timers_enabled) call timer_start(T_fft, 1)
       call fft(1, u1, u0)
-      if (timers_enabled) call timer_stop(T_fft)
+      if (timers_enabled) call timer_stop(T_fft, 1)
 
       do iter = 1, niter
-         if (timers_enabled) call timer_start(T_evolve)
+         if (timers_enabled) call timer_start(T_evolve, 1)
          call evolve(u0, u1, twiddle,  &
      &               dims(1,1), dims(2,1), dims(3,1))
-         if (timers_enabled) call timer_stop(T_evolve)
-         if (timers_enabled) call timer_start(T_fft)
+         if (timers_enabled) call timer_stop(T_evolve, 1)
+         if (timers_enabled) call timer_start(T_fft, 2)
          call fft(-1, u1, u2)
-         if (timers_enabled) call timer_stop(T_fft)
+         if (timers_enabled) call timer_stop(T_fft, 2)
 !         if (timers_enabled) call synchup()
-         if (timers_enabled) call timer_start(T_checksum)
+         if (timers_enabled) call timer_start(T_checksum, 1)
          call checksum(iter, u2, dims(1,1), dims(2,1), dims(3,1))
-         if (timers_enabled) call timer_stop(T_checksum)
+         if (timers_enabled) call timer_stop(T_checksum, 1)
       end do
 
       call verify(niter, verified, class)
-      call timer_stop(t_total)
+      call timer_stop(t_total, 1)
 !!      if (np .ne. np_min) verified = .false.
       total_time = timer_read(t_total)
 
@@ -832,22 +832,22 @@
      &                  x1, x1, scratch)
             call cffts2(1, dims(1,2), dims(2,2), dims(3,2),  &
      &                  x1, x1, scratch)
-            if (timers_enabled) call timer_start(T_transpose)
+            if (timers_enabled) call timer_start(T_transpose, 1)
             call transpose_xy_z(2, 3, x1, x2)
-            if (timers_enabled) call timer_stop(T_transpose)
+            if (timers_enabled) call timer_stop(T_transpose, 1)
             call cffts1(1, dims(1,3), dims(2,3), dims(3,3),  &
      &                  x2, x2, scratch)
          else if (layout_type .eq. layout_2d) then
             call cffts1(1, dims(1,1), dims(2,1), dims(3,1),  &
      &                  x1, x1, scratch)
-            if (timers_enabled) call timer_start(T_transpose)
+            if (timers_enabled) call timer_start(T_transpose, 2)
             call transpose_x_y(1, 2, x1, x2)
-            if (timers_enabled) call timer_stop(T_transpose)
+            if (timers_enabled) call timer_stop(T_transpose, 2)
             call cffts1(1, dims(1,2), dims(2,2), dims(3,2),  &
      &                  x2, x2, scratch)
-            if (timers_enabled) call timer_start(T_transpose)
+            if (timers_enabled) call timer_start(T_transpose, 3)
             call transpose_x_z(2, 3, x2, x1)
-            if (timers_enabled) call timer_stop(T_transpose)
+            if (timers_enabled) call timer_stop(T_transpose, 3)
             call cffts1(1, dims(1,3), dims(2,3), dims(3,3),  &
      &                  x1, x2, scratch)
          endif
@@ -862,9 +862,9 @@
          else if (layout_type .eq. layout_1d) then
             call cffts1(-1, dims(1,3), dims(2,3), dims(3,3),  &
      &                  x1, x1, scratch)
-            if (timers_enabled) call timer_start(T_transpose)
+            if (timers_enabled) call timer_start(T_transpose, 4)
             call transpose_x_yz(3, 2, x1, x2)
-            if (timers_enabled) call timer_stop(T_transpose)
+            if (timers_enabled) call timer_stop(T_transpose, 4)
             call cffts2(-1, dims(1,2), dims(2,2), dims(3,2),  &
      &                  x2, x2, scratch)
             call cffts1(-1, dims(1,1), dims(2,1), dims(3,1),  &
@@ -872,14 +872,14 @@
          else if (layout_type .eq. layout_2d) then
             call cffts1(-1, dims(1,3), dims(2,3), dims(3,3),  &
      &                  x1, x1, scratch)
-            if (timers_enabled) call timer_start(T_transpose)
+            if (timers_enabled) call timer_start(T_transpose, 5)
             call transpose_x_z(3, 2, x1, x2)
-            if (timers_enabled) call timer_stop(T_transpose)
+            if (timers_enabled) call timer_stop(T_transpose, 5)
             call cffts1(-1, dims(1,2), dims(2,2), dims(3,2),  &
      &                  x2, x2, scratch)
-            if (timers_enabled) call timer_start(T_transpose)
+            if (timers_enabled) call timer_start(T_transpose, 6)
             call transpose_x_y(2, 1, x2, x1)
-            if (timers_enabled) call timer_stop(T_transpose)
+            if (timers_enabled) call timer_stop(T_transpose, 6)
             call cffts1(-1, dims(1,1), dims(2,1), dims(3,1),  &
      &                  x1, x2, scratch)
          endif
@@ -910,25 +910,25 @@
 
       do k = 1, d3
          do jj = 0, d2 - fftblock, fftblock
-            if (timers_enabled) call timer_start(T_fftcopy)
+            if (timers_enabled) call timer_start(T_fftcopy, 1)
             do j = 1, fftblock
                do i = 1, d1
                   y(j,i,1) = x(i,j+jj,k)
                enddo
             enddo
-            if (timers_enabled) call timer_stop(T_fftcopy)
+            if (timers_enabled) call timer_stop(T_fftcopy, 1)
             
-            if (timers_enabled) call timer_start(T_fftlow)
+            if (timers_enabled) call timer_start(T_fftlow, 1)
             call cfftz (is, logd1, d1, y, y(1,1,2))
-            if (timers_enabled) call timer_stop(T_fftlow)
+            if (timers_enabled) call timer_stop(T_fftlow, 1)
 
-            if (timers_enabled) call timer_start(T_fftcopy)
+            if (timers_enabled) call timer_start(T_fftcopy, 2)
             do j = 1, fftblock
                do i = 1, d1
                   xout(i,j+jj,k) = y(j,i,1)
                enddo
             enddo
-            if (timers_enabled) call timer_stop(T_fftcopy)
+            if (timers_enabled) call timer_stop(T_fftcopy, 2)
          enddo
       enddo
 
@@ -957,25 +957,25 @@
 
       do k = 1, d3
         do ii = 0, d1 - fftblock, fftblock
-           if (timers_enabled) call timer_start(T_fftcopy)
+           if (timers_enabled) call timer_start(T_fftcopy, 3)
            do j = 1, d2
               do i = 1, fftblock
                  y(i,j,1) = x(i+ii,j,k)
               enddo
            enddo
-           if (timers_enabled) call timer_stop(T_fftcopy)
+           if (timers_enabled) call timer_stop(T_fftcopy, 3)
 
-           if (timers_enabled) call timer_start(T_fftlow)
+           if (timers_enabled) call timer_start(T_fftlow, 2)
            call cfftz (is, logd2, d2, y, y(1, 1, 2))
-           if (timers_enabled) call timer_stop(T_fftlow)
+           if (timers_enabled) call timer_stop(T_fftlow, 2)
 
-           if (timers_enabled) call timer_start(T_fftcopy)
+           if (timers_enabled) call timer_start(T_fftcopy, 4)
            do j = 1, d2
               do i = 1, fftblock
                  xout(i+ii,j,k) = y(i,j,1)
               enddo
            enddo
-           if (timers_enabled) call timer_stop(T_fftcopy)
+           if (timers_enabled) call timer_stop(T_fftcopy, 4)
         enddo
       enddo
 
@@ -1004,25 +1004,25 @@
 
       do j = 1, d2
         do ii = 0, d1 - fftblock, fftblock
-           if (timers_enabled) call timer_start(T_fftcopy)
+           if (timers_enabled) call timer_start(T_fftcopy, 5)
            do k = 1, d3
               do i = 1, fftblock
                  y(i,k,1) = x(i+ii,j,k)
               enddo
            enddo
-           if (timers_enabled) call timer_stop(T_fftcopy)
+           if (timers_enabled) call timer_stop(T_fftcopy, 5)
 
-           if (timers_enabled) call timer_start(T_fftlow)
+           if (timers_enabled) call timer_start(T_fftlow, 3)
            call cfftz (is, logd3, d3, y, y(1, 1, 2))
-           if (timers_enabled) call timer_stop(T_fftlow)
+           if (timers_enabled) call timer_stop(T_fftlow, 3)
 
-           if (timers_enabled) call timer_start(T_fftcopy)
+           if (timers_enabled) call timer_start(T_fftcopy, 6)
            do k = 1, d3
               do i = 1, fftblock
                  xout(i+ii,j,k) = y(i,k,1)
               enddo
            enddo
-           if (timers_enabled) call timer_stop(T_fftcopy)
+           if (timers_enabled) call timer_stop(T_fftcopy, 6)
         enddo
       enddo
 
@@ -1291,7 +1291,7 @@
 
       integer i, j, ii, jj
 
-      if (timers_enabled) call timer_start(T_transxzloc)
+      if (timers_enabled) call timer_start(T_transxzloc, 1)
 
 !---------------------------------------------------------------------
 ! If possible, block the transpose for cache memory systems. 
@@ -1336,7 +1336,7 @@
             end do
          end do
       endif
-      if (timers_enabled) call timer_stop(T_transxzloc)
+      if (timers_enabled) call timer_stop(T_transxzloc, 1)
 
       return
       end
@@ -1361,11 +1361,11 @@
 
 !      if (timers_enabled) call synchup()
 
-      if (timers_enabled) call timer_start(T_transxzglo)
+      if (timers_enabled) call timer_start(T_transxzglo, 1)
       call mpi_alltoall(xin, ntdivnp/np_min, dc_type,  &
      &                  xout, ntdivnp/np_min, dc_type,  &
      &                  commslice1, ierr)
-      if (timers_enabled) call timer_stop(T_transxzglo)
+      if (timers_enabled) call timer_stop(T_transxzglo, 1)
 
       return
       end
@@ -1388,7 +1388,7 @@
       
       integer i, j, p
 
-      if (timers_enabled) call timer_start(T_transxzfin)
+      if (timers_enabled) call timer_start(T_transxzfin, 1)
       do p = 0, np2-1
          ioff = p*n2
          do j = 1, n1/np2
@@ -1397,7 +1397,7 @@
             end do
          end do
       end do
-      if (timers_enabled) call timer_stop(T_transxzfin)
+      if (timers_enabled) call timer_stop(T_transxzfin, 1)
 
       return
       end
@@ -1445,7 +1445,7 @@
       integer i, j, k, kk, ii, i1, k1
 
       double complex buf(transblockpad, maxdim)
-      if (timers_enabled) call timer_start(T_transxzloc)
+      if (timers_enabled) call timer_start(T_transxzloc, 2)
       if (d1 .lt. 32) goto 100
       block3 = d3
       if (block3 .eq. 1)  goto 100
@@ -1498,7 +1498,7 @@
 !---------------------------------------------------------------------
  200  continue
 
-      if (timers_enabled) call timer_stop(T_transxzloc)
+      if (timers_enabled) call timer_stop(T_transxzloc, 2)
       return 
       end
 
@@ -1526,11 +1526,11 @@
 !---------------------------------------------------------------------
 ! do transpose among all  processes with same 1-coord (me1)
 !---------------------------------------------------------------------
-      if (timers_enabled)call timer_start(T_transxzglo)
+      if (timers_enabled)call timer_start(T_transxzglo, 2)
       call mpi_alltoall(xin, d1*d2*d3/np2, dc_type,  &
      &                  xout, d1*d2*d3/np2, dc_type,  &
      &                  commslice1, ierr)
-      if (timers_enabled) call timer_stop(T_transxzglo)
+      if (timers_enabled) call timer_stop(T_transxzglo, 2)
       return
       end
       
@@ -1550,7 +1550,7 @@
       double complex xin(d1/np2, d2, d3, 0:np2-1)
       double complex xout(d1,d2,d3)
       integer i, j, k, p, ioff
-      if (timers_enabled) call timer_start(T_transxzfin)
+      if (timers_enabled) call timer_start(T_transxzfin, 2)
 !---------------------------------------------------------------------
 ! this is the most straightforward way of doing it. the
 ! calculation in the inner loop doesn't help. 
@@ -1576,7 +1576,7 @@
             end do
          end do
       end do
-      if (timers_enabled) call timer_stop(T_transxzfin)
+      if (timers_enabled) call timer_stop(T_transxzfin, 2)
       return
       end
 
@@ -1631,7 +1631,7 @@
       double complex xin(d1, d2, d3)
       double complex xout(d2, d3, d1)
       integer i, j, k
-      if (timers_enabled) call timer_start(T_transxyloc)
+      if (timers_enabled) call timer_start(T_transxyloc, 1)
 
       do k = 1, d3
          do i = 1, d1
@@ -1640,7 +1640,7 @@
             end do
          end do
       end do
-      if (timers_enabled) call timer_stop(T_transxyloc)
+      if (timers_enabled) call timer_stop(T_transxyloc, 1)
       return 
       end
 
@@ -1671,11 +1671,11 @@
 !---------------------------------------------------------------------
 ! do transpose among all processes with same 1-coord (me1)
 !---------------------------------------------------------------------
-      if (timers_enabled) call timer_start(T_transxyglo)
+      if (timers_enabled) call timer_start(T_transxyglo, 1)
       call mpi_alltoall(xin, d1*d2*d3/np1, dc_type,  &
      &                  xout, d1*d2*d3/np1, dc_type,  &
      &                  commslice2, ierr)
-      if (timers_enabled) call timer_stop(T_transxyglo)
+      if (timers_enabled) call timer_stop(T_transxyglo, 1)
 
       return
       end
@@ -1696,7 +1696,7 @@
       double complex xin(d1/np1, d3, d2, 0:np1-1)
       double complex xout(d1,d2,d3)
       integer i, j, k, p, ioff
-      if (timers_enabled) call timer_start(T_transxyfin)
+      if (timers_enabled) call timer_start(T_transxyfin, 1)
 !---------------------------------------------------------------------
 ! this is the most straightforward way of doing it. the
 ! calculation in the inner loop doesn't help. 
@@ -1723,7 +1723,7 @@
             end do
          end do
       end do
-      if (timers_enabled) call timer_stop(T_transxyfin)
+      if (timers_enabled) call timer_stop(T_transxyfin, 1)
       return
       end
 
@@ -1761,10 +1761,10 @@
       end do
       chk = chk/ntotal_f
 
-      if (timers_enabled) call timer_start(T_synch)
+      if (timers_enabled) call timer_start(T_synch, 1)
       call MPI_Reduce(chk, allchk, 1, dc_type, MPI_SUM,  &
      &                0, comm_solve, ierr)      
-      if (timers_enabled) call timer_stop(T_synch)
+      if (timers_enabled) call timer_stop(T_synch, 1)
       if (me .eq. 0) then
             write (*, 30) i, allchk
  30         format (' T =',I5,5X,'Checksum =',1P2D22.12)
@@ -1792,9 +1792,9 @@
       implicit none
 
       integer ierr
-      call timer_start(T_synch)
+      call timer_start(T_synch, 2)
       call mpi_barrier(comm_solve, ierr)
-      call timer_stop(T_synch)
+      call timer_stop(T_synch, 2)
       return
       end
 

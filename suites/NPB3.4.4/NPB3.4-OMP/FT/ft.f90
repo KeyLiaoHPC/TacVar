@@ -96,8 +96,8 @@
          call timer_clear(i)
       end do
 
-      call timer_start(T_total)
-      if (timers_enabled) call timer_start(T_setup)
+      call timer_start(T_total, 1)
+      if (timers_enabled) call timer_start(T_setup, 1)
 
       call compute_indexmap(twiddle, dims(1), dims(2), dims(3))
 
@@ -105,28 +105,28 @@
 
       call fft_init (dims(1))
 
-      if (timers_enabled) call timer_stop(T_setup)
-      if (timers_enabled) call timer_start(T_fft)
+      if (timers_enabled) call timer_stop(T_setup, 1)
+      if (timers_enabled) call timer_start(T_fft, 1)
       call fft(1, u1, u0)
-      if (timers_enabled) call timer_stop(T_fft)
+      if (timers_enabled) call timer_stop(T_fft, 1)
 
       do iter = 1, niter
-         if (timers_enabled) call timer_start(T_evolve)
+         if (timers_enabled) call timer_start(T_evolve, 1)
          call evolve(u0, u1, twiddle, dims(1), dims(2), dims(3))
-         if (timers_enabled) call timer_stop(T_evolve)
-         if (timers_enabled) call timer_start(T_fft)
+         if (timers_enabled) call timer_stop(T_evolve, 1)
+         if (timers_enabled) call timer_start(T_fft, 2)
 !         call fft(-1, u1, u2)
          call fft(-1, u1, u1)
-         if (timers_enabled) call timer_stop(T_fft)
-         if (timers_enabled) call timer_start(T_checksum)
+         if (timers_enabled) call timer_stop(T_fft, 2)
+         if (timers_enabled) call timer_start(T_checksum, 1)
 !         call checksum(iter, u2, dims(1), dims(2), dims(3))
          call checksum(iter, u1, dims(1), dims(2), dims(3))
-         if (timers_enabled) call timer_stop(T_checksum)
+         if (timers_enabled) call timer_stop(T_checksum, 1)
       end do
 
       call verify(nx, ny, nz, niter, verified, class)
 
-      call timer_stop(t_total)
+      call timer_stop(t_total, 1)
       total_time = timer_read(t_total)
 
       call free_space
@@ -516,7 +516,7 @@
 
       logd1 = ilog2(d1)
 
-      if (timers_enabled) call timer_start(T_fftx)
+      if (timers_enabled) call timer_start(T_fftx, 1)
 !$omp parallel do default(shared) private(i,j,k,jj,y1,y2,jn)  &
 !$omp&  shared(is,logd1,d1) collapse(2)
       do k = 1, d3
@@ -539,7 +539,7 @@
             enddo
          enddo
       enddo
-      if (timers_enabled) call timer_stop(T_fftx)
+      if (timers_enabled) call timer_stop(T_fftx, 1)
 
       return
       end
@@ -564,7 +564,7 @@
 
       logd2 = ilog2(d2)
 
-      if (timers_enabled) call timer_start(T_ffty)
+      if (timers_enabled) call timer_start(T_ffty, 1)
 !$omp parallel do default(shared) private(i,j,k,ii,y1,y2,in)  &
 !$omp&  shared(is,logd2,d2) collapse(2)
       do k = 1, d3
@@ -586,7 +586,7 @@
            enddo
         enddo
       enddo
-      if (timers_enabled) call timer_stop(T_ffty)
+      if (timers_enabled) call timer_stop(T_ffty, 1)
 
       return
       end
@@ -611,7 +611,7 @@
 
       logd3 = ilog2(d3)
 
-      if (timers_enabled) call timer_start(T_fftz)
+      if (timers_enabled) call timer_start(T_fftz, 1)
 !$omp parallel do default(shared) private(i,j,k,ii,y1,y2,in)  &
 !$omp&  shared(is) collapse(2)
       do j = 1, d2
@@ -633,7 +633,7 @@
            enddo
         enddo
       enddo
-      if (timers_enabled) call timer_stop(T_fftz)
+      if (timers_enabled) call timer_stop(T_fftz, 1)
 
       return
       end

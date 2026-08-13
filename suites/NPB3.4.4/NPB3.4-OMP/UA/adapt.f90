@@ -10,7 +10,7 @@
       logical if_coarsen,if_refine,ifmortar,ifrepeat
       integer iel,miel,irefine,icoarsen,neltold,step
 
-      if (timeron) call timer_start(t_adaptation)
+      if (timeron) call timer_start(t_adaptation, 1)
       ifmortar=.false.
 !.....compute heat source center(x0,y0,z0)
       x0=x00+velx*time
@@ -105,7 +105,7 @@
         call mortar
         call prepwork
       endif
-      if (timeron) call timer_stop(t_adaptation)
+      if (timeron) call timer_stop(t_adaptation, 1)
 
       return
       end 

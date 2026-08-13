@@ -27,7 +27,7 @@
 !---------------------------------------------------------------------
 !---------------------------------------------------------------------
 
-      if (timeron) call timer_start(t_zsolve)
+      if (timeron) call timer_start(t_zsolve, 1)
 
 !---------------------------------------------------------------------
 !---------------------------------------------------------------------
@@ -320,7 +320,7 @@
 !     outer most do loops - sweeping in i direction
 !---------------------------------------------------------------------
 
-            if (timeron) call timer_start(t_solsub)
+            if (timeron) call timer_start(t_solsub, 1)
 !---------------------------------------------------------------------
 !     multiply c(i,j,0) by b_inverse and copy back to c
 !     multiply rhs(0) by b_inverse(0) and copy to rhs
@@ -386,7 +386,7 @@
 !---------------------------------------------------------------------
             call binvrhs( lhs(1,1,bb,ksize),  &
      &                       rhs(1,i,j,ksize) )
-            if (timeron) call timer_stop(t_solsub)
+            if (timeron) call timer_stop(t_solsub, 1)
 
 
 !---------------------------------------------------------------------
@@ -410,7 +410,7 @@
 
          enddo
       enddo
-      if (timeron) call timer_stop(t_zsolve)
+      if (timeron) call timer_stop(t_zsolve, 1)
 
       return
       end

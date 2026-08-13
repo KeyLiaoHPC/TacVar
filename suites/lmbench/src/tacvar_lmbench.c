@@ -82,7 +82,12 @@ void tacvar_lmbench_ensure_init(void)
     ctx.rank = 0;
     ctx.thread = 0;
     ctx.nprocs = 1;
-    (void)tacvar_init(&ctx);
+    if (tacvar_init(&ctx) == 0) {
+        int region_ids[1] = { 0 };
+        int nlocs[1] = { 1 };
+        const char *names[1] = { g_bench };
+        (void)tacvar_write_timer_info(region_ids, nlocs, names, 1);
+    }
 }
 
 static tacvar_lmb_slot_t *find_slot(struct timeval *key, int create)
@@ -178,7 +183,7 @@ uint64_t tacvar_lmbench_stop(struct timeval *begin, struct timeval *end)
     if (begin)
         encode_ns_to_tv(begin, timer_start_raw);
 
-    tacvar_csv_write_simple(0, timer_start_raw, timer_stop_raw, elapsed_ns,
+    tacvar_csv_write_simple(0, 0, timer_start_raw, timer_stop_raw, elapsed_ns,
                             cpu_start, cpu_stop,
 #if TACVAR_COUNTER_COUNT > 0
                             counter_start_ptr, counter_stop, counter_delta

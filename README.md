@@ -60,7 +60,7 @@ Usage: filt.x [OPTION...]
 
 ## 3 NPB / lmbench multi-timer and counter interface
 
-Shared measurement support for **NPB-MPI**, **NPB-OMP**, and **lmbench** lives under `src/measure/`. Backends are selected at **build time** via each suite's `tacvar.conf`. Hot-path timer/counter reads use generated macros / `static inline` code (no runtime backend vtable). Benchmark kernel sources and their CFLAGS are not modified.
+Shared measurement support for **NPB-MPI**, **NPB-OMP**, and **lmbench** lives under `src/measure/`. Backends are selected at **build time** via each suite's `tacvar.conf`. Hot-path timer/counter reads use generated macros / `static inline` code (no runtime backend vtable). NPB `timer_start`/`timer_stop` take `(region_id, loc_id)`; measurement CSV paths are `DATA_ROOT/Kernel.CLASS/<short_host>_r*_t*_p*.csv`.
 
 ```mermaid
 flowchart LR
@@ -71,7 +71,7 @@ flowchart LR
   Lib --> Counters[Selected counter]
   NPB[NPB timer API] --> Lib
   LMB[lmbench start/stop] --> Lib
-  Lib --> CSV["data_YYYYMMDDTHHmmss/*.csv"]
+  Lib --> CSV["DATA_ROOT/Kernel.CLASS/*.csv"]
 ```
 
 ### 3.1 Architecture and support matrix
@@ -161,18 +161,19 @@ make -C src/measure CONF=suites/lmbench/tacvar.conf CONSUMER=lmbench \
 
 ### 3.5 CSV output
 
-Each run creates **one** `data_YYYYMMDDTHHmmss/` under the benchmark cwd (`TACVAR_OUTPUT_ROOT`). Override with `TACVAR_DATA_DIR` to reuse an existing directory (e.g. after fork/exec). Writers (rank / process / thread) get separate files:
+Each run creates **one** `data_YYYYMMDDTHHmmss/` (`DATA_ROOT`) under the benchmark cwd (`TACVAR_OUTPUT_ROOT`). Override with `TACVAR_DATA_DIR` to reuse an existing directory (e.g. after fork/exec). Files are nested by kernel:
 
 ```text
-<data_dir>/<suite>_<benchmark>_<class>_rRRRR_tTTTT_pPID.csv
+<DATA_ROOT>/<Kernel>.<CLASS>/timer_info.csv
+<DATA_ROOT>/<Kernel>.<CLASS>/<short_host>_rRRRR_tTTTT_pPID.csv
 ```
 
-Example: `npb-mpi_is_S_r0000_t0000_p12345.csv`. Opened in append mode; header is written once on the first row.
+Example: `data_20260813T082100/is.S/c920bn1_r0000_t0000_p12345.csv`. `short_host` is `hostname -s` (never FQDN). Opened in append mode; header is written once on the first row. `timer_info.csv` lists `region_id,nloc,name` once per run.
 
 **Base header** (always present; comma-separated, no quoting):
 
 ```text
-seq,suite,benchmark,class,test_tag,region_id,timer,
+seq,suite,benchmark,class,test_tag,region_id,loc_id,timer,
 raw_start,raw_stop,elapsed_ns,rank,thread,pid,cpu_start,cpu_stop,
 migrated,valid
 ```
@@ -185,6 +186,7 @@ migrated,valid
 | `class` | string | NPB class letter (`S`…`E`); often `X` / empty for lmbench |
 | `test_tag` | string | Optional sub-test label (may be empty) |
 | `region_id` | int | Timed region index (NPB timer slot, or 0 for lmbench) |
+| `loc_id` | int | Call-site id within the same `region_id` (NPB); 0 for lmbench |
 | `timer` | string | Build-time timer name (`TACVAR_TIMER`) |
 | `raw_start` / `raw_stop` | uint64 | Backend-native tick / timestamp at begin/end |
 | `elapsed_ns` | int64 | Duration in nanoseconds (`TACVAR_TIMER_DELTA_NS`); always ≥ 0 |
@@ -207,8 +209,8 @@ migrated,valid
 Example with `cpu-cycles,instructions`:
 
 ```text
-seq,suite,benchmark,class,test_tag,region_id,timer,raw_start,raw_stop,elapsed_ns,rank,thread,pid,cpu_start,cpu_stop,migrated,valid,counter_backend,cpu-cycles_start,cpu-cycles_stop,cpu-cycles_delta,instructions_start,instructions_stop,instructions_delta
-1,npb-omp,cg,S,,0,clock_gettime,123...,456...,789,0,0,12345,3,3,0,1,perf_event_open,1000,2500,1500,8000,12000,4000
+seq,suite,benchmark,class,test_tag,region_id,loc_id,timer,raw_start,raw_stop,elapsed_ns,rank,thread,pid,cpu_start,cpu_stop,migrated,valid,counter_backend,cpu-cycles_start,cpu-cycles_stop,cpu-cycles_delta,instructions_start,instructions_stop,instructions_delta
+1,npb-omp,cg,S,,0,1,clock_gettime,123...,456...,789,0,0,12345,3,3,0,1,perf_event_open,1000,2500,1500,8000,12000,4000
 ```
 
 Notes:
@@ -216,7 +218,7 @@ Notes:
 - One row per start/stop interval; written outside the timed region (buffered, ~64 KiB).
 - Prefer binding (`mpirun --bind-to core`, `OMP_PROC_BIND`, `taskset`) so `migrated` stays 0 for asm counters.
 - With `TACVAR_COUNTER_BACKEND=none`, the file stops at `valid` (no `counter_backend` column).
-
+- NPB `timer_read(n)` still sums all `loc_id` sites for slot `n`; `loc_id` is a CSV annotation only.
 ### 3.6 Subject-code boundary
 
 **Unchanged:** NPB benchmark kernels (BT/CG/…), lmbench `lat_*` / `bw_*` kernels and `bench.h` body logic.

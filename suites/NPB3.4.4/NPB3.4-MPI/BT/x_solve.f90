@@ -29,7 +29,7 @@
 
       istart = 0
 
-      if (timeron) call timer_start(t_xsolve)
+      if (timeron) call timer_start(t_xsolve, 1)
 !---------------------------------------------------------------------
 !     in our terminology stage is the number of the cell in the x-direction
 !     i.e. stage = 1 means the start of the line stage=ncells means end
@@ -62,7 +62,7 @@
 !     processor working on preceeding cell
 !---------------------------------------------------------------------
             first = 0
-            if (timeron) call timer_start(t_xcomm)
+            if (timeron) call timer_start(t_xcomm, 1)
             call x_receive_solve_info(c)
 !---------------------------------------------------------------------
 !     overlap computations and communications
@@ -73,7 +73,7 @@
 !---------------------------------------------------------------------
             call mpi_wait(send_id,r_status,error)
             call mpi_wait(recv_id,r_status,error)
-            if (timeron) call timer_stop(t_xcomm)
+            if (timeron) call timer_stop(t_xcomm, 1)
 !---------------------------------------------------------------------
 !     install C'(istart) and rhs'(istart) to be used in this cell
 !---------------------------------------------------------------------
@@ -99,18 +99,18 @@
 !---------------------------------------------------------------------
             call x_backsubstitute(first, last,c)
          else
-            if (timeron) call timer_start(t_xcomm)
+            if (timeron) call timer_start(t_xcomm, 2)
             call x_receive_backsub_info(c)
             call mpi_wait(send_id,r_status,error)
             call mpi_wait(recv_id,r_status,error)
-            if (timeron) call timer_stop(t_xcomm)
+            if (timeron) call timer_stop(t_xcomm, 2)
             call x_unpack_backsub_info(c)
             call x_backsubstitute(first,last,c)
          endif
          if (first .eq. 0) call x_send_backsub_info(c)
       enddo
 
-      if (timeron) call timer_stop(t_xsolve)
+      if (timeron) call timer_stop(t_xsolve, 1)
 
       return
       end
@@ -203,12 +203,12 @@
 !---------------------------------------------------------------------
 !     send buffer 
 !---------------------------------------------------------------------
-      if (timeron) call timer_start(t_xcomm)
+      if (timeron) call timer_start(t_xcomm, 3)
       call mpi_isend(in_buffer, buffer_size,  &
      &     dp_type, successor(1),  &
      &     WEST+jp+kp*NCELLS, comm_solve,  &
      &     send_id,error)
-      if (timeron) call timer_stop(t_xcomm)
+      if (timeron) call timer_stop(t_xcomm, 3)
 
       return
       end
@@ -249,12 +249,12 @@
             ptr = ptr+BLOCK_SIZE
          enddo
       enddo
-      if (timeron) call timer_start(t_xcomm)
+      if (timeron) call timer_start(t_xcomm, 4)
       call mpi_isend(in_buffer, buffer_size,  &
      &     dp_type, predecessor(1),  &
      &     EAST+jp+kp*NCELLS, comm_solve,  &
      &     send_id,error)
-      if (timeron) call timer_stop(t_xcomm)
+      if (timeron) call timer_stop(t_xcomm, 4)
 
       return
       end

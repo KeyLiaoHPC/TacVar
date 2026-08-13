@@ -27,7 +27,7 @@
 !---------------------------------------------------------------------
 !---------------------------------------------------------------------
 
-      if (timeron) call timer_start(t_ysolve)
+      if (timeron) call timer_start(t_ysolve, 1)
 
 !---------------------------------------------------------------------
 !---------------------------------------------------------------------
@@ -316,7 +316,7 @@
 !     c'(JMAX) and rhs'(JMAX) will be sent to next cell
 !---------------------------------------------------------------------
 
-            if (timeron) call timer_start(t_solsub)
+            if (timeron) call timer_start(t_solsub, 1)
 !---------------------------------------------------------------------
 !     multiply c(i,0,k) by b_inverse and copy back to c
 !     multiply rhs(0) by b_inverse(0) and copy to rhs
@@ -377,7 +377,7 @@
 !---------------------------------------------------------------------
             call binvrhs( lhs(1,1,bb,jsize),  &
      &                       rhs(1,i,jsize,k) )
-            if (timeron) call timer_stop(t_solsub)
+            if (timeron) call timer_stop(t_solsub, 1)
 
 
 !---------------------------------------------------------------------
@@ -398,7 +398,7 @@
 
          enddo
       enddo
-      if (timeron) call timer_stop(t_ysolve)
+      if (timeron) call timer_stop(t_ysolve, 1)
 
       return
       end

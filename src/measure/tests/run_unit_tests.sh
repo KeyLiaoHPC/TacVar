@@ -91,11 +91,12 @@ cat > "$TMP/csv_schema.c" <<'EOF'
 #include <string.h>
 #include <assert.h>
 static const char *hdr =
-  "seq,suite,benchmark,class,test_tag,region_id,timer,"
+  "seq,suite,benchmark,class,test_tag,region_id,loc_id,timer,"
   "raw_start,raw_stop,elapsed_ns,rank,thread,pid,cpu_start,cpu_stop,"
   "migrated,counter_backend";
 int main(void) {
   assert(strstr(hdr, "elapsed_ns") != NULL);
+  assert(strstr(hdr, "loc_id") != NULL);
   assert(strstr(hdr, "migrated") != NULL);
   assert(strstr(hdr, "counter_backend") != NULL);
   return 0;

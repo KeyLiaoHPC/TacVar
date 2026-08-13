@@ -157,7 +157,7 @@
          call timer_clear(i)
       end do
       call mpi_barrier(comm_solve, ierr)
-      call timer_start(1)
+      call timer_start(1, 1)
 
       t1 = a
       call vranlc(0, t1, a, x)
@@ -208,15 +208,15 @@
 !        Compute uniform pseudorandom numbers.
  130     continue
 
-         if (timers_enabled) call timer_start(t_randn)
+         if (timers_enabled) call timer_start(t_randn, 1)
          call vranlc(2 * nk, t1, a, x)
-         if (timers_enabled) call timer_stop(t_randn)
+         if (timers_enabled) call timer_stop(t_randn, 1)
 
 !        Compute Gaussian deviates by acceptance-rejection method and 
 !        tally counts in concentric square annuli.  This loop is not 
 !        vectorizable. 
 
-         if (timers_enabled) call timer_start(t_gpairs)
+         if (timers_enabled) call timer_start(t_gpairs, 1)
 
          do 140 i = 1, nk
             x1 = 2.d0 * x(2*i-1) - 1.d0
@@ -233,11 +233,11 @@
             endif
  140     continue
 
-         if (timers_enabled) call timer_stop(t_gpairs)
+         if (timers_enabled) call timer_stop(t_gpairs, 1)
 
  150  continue
 
-      if (timers_enabled) call timer_start(t_rcomm)
+      if (timers_enabled) call timer_start(t_rcomm, 1)
       call mpi_allreduce(sx, x, 1, dp_type,  &
      &                   MPI_SUM, comm_solve, ierr)
       sx = x(1)
@@ -246,7 +246,7 @@
       sy = x(1)
       call mpi_allreduce(q, x, nq, dp_type,  &
      &                   MPI_SUM, comm_solve, ierr)
-      if (timers_enabled) call timer_stop(t_rcomm)
+      if (timers_enabled) call timer_stop(t_rcomm, 1)
 
       do i = 1, nq
          q(i-1) = x(i)
@@ -256,7 +256,7 @@
         gc = gc + q(i)
  160  continue
 
-      call timer_stop(1)
+      call timer_stop(1, 1)
       tm  = timer_read(1)
 
       call mpi_allreduce(tm, x, 1, dp_type,  &

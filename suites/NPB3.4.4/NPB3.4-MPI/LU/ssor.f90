@@ -72,7 +72,7 @@
       call MPI_BARRIER( comm_solve, IERROR )
  
       call timer_clear(1)
-      call timer_start(1)
+      call timer_start(1, 1)
 
 !---------------------------------------------------------------------
 !   the timestep loop
@@ -105,13 +105,13 @@
 !---------------------------------------------------------------------
 !   receive data from north and west
 !---------------------------------------------------------------------
-            if (timeron) call timer_start(t_lcomm)
+            if (timeron) call timer_start(t_lcomm, 1)
             iex = 0
             call exchange_1( rsd,k,iex )
-            if (timeron) call timer_stop(t_lcomm)
+            if (timeron) call timer_stop(t_lcomm, 1)
 
 
-            if (timeron) call timer_start(t_blts)
+            if (timeron) call timer_start(t_blts, 1)
             do j = jst, jend
 
 !---------------------------------------------------------------------
@@ -130,27 +130,27 @@
      &                    ist, iend, jst, jend,  &
      &                    nx0, ny0, ipt, jpt)
             end do
-            if (timeron) call timer_stop(t_blts)
+            if (timeron) call timer_stop(t_blts, 1)
 
 !---------------------------------------------------------------------
 !   send data to east and south
 !---------------------------------------------------------------------
-            if (timeron) call timer_start(t_lcomm)
+            if (timeron) call timer_start(t_lcomm, 2)
             iex = 2
             call exchange_1( rsd,k,iex )
-            if (timeron) call timer_stop(t_lcomm)
+            if (timeron) call timer_stop(t_lcomm, 2)
          end do
  
          do k = nz - 1, 2, -1
 !---------------------------------------------------------------------
 !   receive data from south and east
 !---------------------------------------------------------------------
-            if (timeron) call timer_start(t_ucomm)
+            if (timeron) call timer_start(t_ucomm, 1)
             iex = 1
             call exchange_1( rsd,k,iex )
-            if (timeron) call timer_stop(t_ucomm)
+            if (timeron) call timer_stop(t_ucomm, 1)
 
-            if (timeron) call timer_start(t_buts)
+            if (timeron) call timer_start(t_buts, 1)
             do j = jend, jst, -1
 
 !---------------------------------------------------------------------
@@ -169,15 +169,15 @@
      &                    ist, iend, jst, jend,  &
      &                    nx0, ny0, ipt, jpt)
             end do
-            if (timeron) call timer_stop(t_buts)
+            if (timeron) call timer_stop(t_buts, 1)
 
 !---------------------------------------------------------------------
 !   send data to north and west
 !---------------------------------------------------------------------
-            if (timeron) call timer_start(t_ucomm)
+            if (timeron) call timer_start(t_ucomm, 2)
             iex = 3
             call exchange_1( rsd,k,iex )
-            if (timeron) call timer_stop(t_ucomm)
+            if (timeron) call timer_stop(t_ucomm, 2)
          end do
  
 !---------------------------------------------------------------------
@@ -244,7 +244,7 @@
       end do
   900 continue
  
-      call timer_stop(1)
+      call timer_stop(1, 1)
       wtime = timer_read(1)
  
 

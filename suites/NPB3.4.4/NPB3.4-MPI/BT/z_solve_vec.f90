@@ -26,7 +26,7 @@
 
       kstart = 0
 
-      if (timeron) call timer_start(t_zsolve)
+      if (timeron) call timer_start(t_zsolve, 1)
 !---------------------------------------------------------------------
 !     in our terminology stage is the number of the cell in the y-direct
 !     i.e. stage = 1 means the start of the line stage=ncells means end
@@ -58,7 +58,7 @@
 !     processor working on preceeding cell
 !---------------------------------------------------------------------
             first = 0
-            if (timeron) call timer_start(t_zcomm)
+            if (timeron) call timer_start(t_zcomm, 1)
             call z_receive_solve_info(c)
 !---------------------------------------------------------------------
 !     overlap computations and communications
@@ -69,7 +69,7 @@
 !---------------------------------------------------------------------
             call mpi_wait(send_id,r_status,error)
             call mpi_wait(recv_id,r_status,error)
-            if (timeron) call timer_stop(t_zcomm)
+            if (timeron) call timer_stop(t_zcomm, 1)
 !---------------------------------------------------------------------
 !     install C'(kstart+1) and rhs'(kstart+1) to be used in this cell
 !---------------------------------------------------------------------
@@ -95,18 +95,18 @@
 !---------------------------------------------------------------------
             call z_backsubstitute(first, last,c)
          else
-            if (timeron) call timer_start(t_zcomm)
+            if (timeron) call timer_start(t_zcomm, 2)
             call z_receive_backsub_info(c)
             call mpi_wait(send_id,r_status,error)
             call mpi_wait(recv_id,r_status,error)
-            if (timeron) call timer_stop(t_zcomm)
+            if (timeron) call timer_stop(t_zcomm, 2)
             call z_unpack_backsub_info(c)
             call z_backsubstitute(first,last,c)
          endif
          if (first .eq. 0) call z_send_backsub_info(c)
       enddo
 
-      if (timeron) call timer_stop(t_zsolve)
+      if (timeron) call timer_stop(t_zsolve, 1)
 
       return
       end
@@ -197,12 +197,12 @@
 !---------------------------------------------------------------------
 !     send buffer 
 !---------------------------------------------------------------------
-      if (timeron) call timer_start(t_zcomm)
+      if (timeron) call timer_start(t_zcomm, 3)
       call mpi_isend(in_buffer, buffer_size,  &
      &     dp_type, successor(3),  &
      &     BOTTOM+ip+jp*NCELLS, comm_solve,  &
      &     send_id,error)
-      if (timeron) call timer_stop(t_zcomm)
+      if (timeron) call timer_stop(t_zcomm, 3)
 
       return
       end
@@ -244,12 +244,12 @@
          enddo
       enddo
 
-      if (timeron) call timer_start(t_zcomm)
+      if (timeron) call timer_start(t_zcomm, 4)
       call mpi_isend(in_buffer, buffer_size,  &
      &     dp_type, predecessor(3),  &
      &     TOP+ip+jp*NCELLS, comm_solve,  &
      &     send_id,error)
-      if (timeron) call timer_stop(t_zcomm)
+      if (timeron) call timer_stop(t_zcomm, 4)
 
       return
       end

@@ -14,7 +14,7 @@
      &     wijk, wp1, wm1
 
 
-      if (timeron) call timer_start(t_rhs)
+      if (timeron) call timer_start(t_rhs, 1)
 
 !$omp parallel default(shared) private(i,j,k,m,rho_inv,uijk,up1,um1,  &
 !$omp&   vijk,vp1,vm1,wijk,wp1,wm1)
@@ -62,7 +62,7 @@
 
 
 !$omp master
-      if (timeron) call timer_start(t_rhsx)
+      if (timeron) call timer_start(t_rhsx, 1)
 !$omp end master
 !---------------------------------------------------------------------
 !     compute xi-direction fluxes 
@@ -165,9 +165,9 @@
       enddo
 !$omp end do nowait
 !$omp master
-      if (timeron) call timer_stop(t_rhsx)
+      if (timeron) call timer_stop(t_rhsx, 1)
 
-      if (timeron) call timer_start(t_rhsy)
+      if (timeron) call timer_start(t_rhsy, 1)
 !$omp end master
 !---------------------------------------------------------------------
 !     compute eta-direction fluxes 
@@ -275,9 +275,9 @@
       enddo
 !$omp end do nowait
 !$omp master
-      if (timeron) call timer_stop(t_rhsy)
+      if (timeron) call timer_stop(t_rhsy, 1)
 
-      if (timeron) call timer_start(t_rhsz)
+      if (timeron) call timer_start(t_rhsz, 1)
 !$omp end master
 !---------------------------------------------------------------------
 !     compute zeta-direction fluxes 
@@ -386,7 +386,7 @@
       enddo
 !$omp end do nowait
 !$omp master
-      if (timeron) call timer_stop(t_rhsz)
+      if (timeron) call timer_stop(t_rhsz, 1)
 !$omp end master
 
 !$omp do schedule(static) collapse(2)
@@ -405,7 +405,7 @@
 
 !$omp end parallel
 
-      if (timeron) call timer_stop(t_rhs)
+      if (timeron) call timer_stop(t_rhs, 1)
 
       return
       end

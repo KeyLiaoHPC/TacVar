@@ -26,7 +26,7 @@
 !---------------------------------------------------------------------
 !---------------------------------------------------------------------
 
-       if (timeron) call timer_start(t_xsolve)
+       if (timeron) call timer_start(t_xsolve, 1)
 !$omp parallel default(shared) private(i,j,k,i1,i2,jj,jb,jm,  &
 !$omp&    ru1,fac1,fac2)
 
@@ -361,7 +361,7 @@
        end do
 !$omp end do nowait
 !$omp end parallel
-       if (timeron) call timer_stop(t_xsolve)
+       if (timeron) call timer_stop(t_xsolve, 1)
 
 !---------------------------------------------------------------------
 !      Do the block-diagonal inversion          

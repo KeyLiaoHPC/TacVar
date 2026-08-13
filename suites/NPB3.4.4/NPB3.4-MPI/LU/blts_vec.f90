@@ -53,13 +53,13 @@
 !---------------------------------------------------------------------
 !   receive data from north and west
 !---------------------------------------------------------------------
-      if (timeron) call timer_start(t_lcomm)
+      if (timeron) call timer_start(t_lcomm, 1)
       iex = 0
       call exchange_1( v,k,iex )
-      if (timeron) call timer_stop(t_lcomm)
+      if (timeron) call timer_stop(t_lcomm, 1)
 
 
-      if (timeron) call timer_start(t_blts)
+      if (timeron) call timer_start(t_blts, 1)
       do j = jst, jend
          do i = ist, iend
             do m = 1, 5
@@ -326,15 +326,15 @@
 
         enddo
       enddo
-      if (timeron) call timer_stop(t_blts)
+      if (timeron) call timer_stop(t_blts, 1)
 
 !---------------------------------------------------------------------
 !   send data to east and south
 !---------------------------------------------------------------------
-      if (timeron) call timer_start(t_lcomm)
+      if (timeron) call timer_start(t_lcomm, 2)
       iex = 2
       call exchange_1( v,k,iex )
-      if (timeron) call timer_stop(t_lcomm)
+      if (timeron) call timer_stop(t_lcomm, 2)
 
       return
       end

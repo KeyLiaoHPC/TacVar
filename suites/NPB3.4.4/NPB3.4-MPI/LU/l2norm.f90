@@ -53,7 +53,7 @@
 !---------------------------------------------------------------------
 !   compute the global sum of individual contributions to dot product.
 !---------------------------------------------------------------------
-      if (timeron) call timer_start(t_rcomm)
+      if (timeron) call timer_start(t_rcomm, 1)
       call MPI_ALLREDUCE( dummy,  &
      &                    sum,  &
      &                    5,  &
@@ -61,7 +61,7 @@
      &                    MPI_SUM,  &
      &                    comm_solve,  &
      &                    IERROR )
-      if (timeron) call timer_stop(t_rcomm)
+      if (timeron) call timer_stop(t_rcomm, 1)
 
       do m = 1, 5
          sum(m) = sqrt ( sum(m) / ( dble(nx0-2)*(ny0-2)*(nz0-2) ) )

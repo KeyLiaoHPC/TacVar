@@ -164,7 +164,7 @@
        call mpi_barrier(comm_setup, error)
 
        call timer_clear(1)
-       call timer_start(1)
+       call timer_start(1, 1)
 
        do  step = 1, niter
 
@@ -180,7 +180,7 @@
 
        end do
 
-       call timer_stop(1)
+       call timer_stop(1, 1)
        t = timer_read(1)
        
        call verify(class, verified)

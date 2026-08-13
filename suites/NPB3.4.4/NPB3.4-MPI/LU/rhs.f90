@@ -35,7 +35,7 @@
       double precision  u21km1, u31km1, u41km1, u51km1
 
 
-      if (timeron) call timer_start(t_rhs)
+      if (timeron) call timer_start(t_rhs, 1)
 
       do k = 1, nz
          do j = 1, ny
@@ -60,9 +60,9 @@
 !---------------------------------------------------------------------
 !   communicate and receive/send two rows of data
 !---------------------------------------------------------------------
-      if (timeron) call timer_start(t_exch)
+      if (timeron) call timer_start(t_exch, 1)
       call exchange_3(u,iex)
-      if (timeron) call timer_stop(t_exch)
+      if (timeron) call timer_stop(t_exch, 1)
 
       L1 = 0
       if (north.eq.-1) L1 = 1
@@ -209,9 +209,9 @@
 !---------------------------------------------------------------------
 !   communicate and receive/send two rows of data
 !---------------------------------------------------------------------
-      if (timeron) call timer_start(t_exch)
+      if (timeron) call timer_start(t_exch, 2)
       call exchange_3(u,iex)
-      if (timeron) call timer_stop(t_exch)
+      if (timeron) call timer_stop(t_exch, 2)
 
       L1 = 0
       if (west.eq.-1) L1 = 1
@@ -506,7 +506,7 @@
          end do
       end do
 
-      if (timeron) call timer_stop(t_rhs)
+      if (timeron) call timer_stop(t_rhs, 1)
 
       return
       end

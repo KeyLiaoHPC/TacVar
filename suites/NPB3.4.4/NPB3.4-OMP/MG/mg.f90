@@ -80,7 +80,7 @@
          call timer_clear(i)
       end do
 
-      call timer_start(T_init)
+      call timer_start(T_init, 1)
 
 !---------------------------------------------------------------------
 ! Read in input data
@@ -221,7 +221,7 @@
       call zero3(u,n1,n2,n3)
       call zran3(v,n1,n2,n3,nx(lt),ny(lt),k)
 
-      call timer_stop(T_init)
+      call timer_stop(T_init, 1)
       tinit = timer_read(T_init)
 
       write( *,'(A,F15.3,A/)' )  &
@@ -231,11 +231,11 @@
          call timer_clear(i)
       end do
 
-      call timer_start(T_bench)
+      call timer_start(T_bench, 1)
 
-      if (timeron) call timer_start(T_resid2)
+      if (timeron) call timer_start(T_resid2, 1)
       call resid(u,v,r,n1,n2,n3,a,k)
-      if (timeron) call timer_stop(T_resid2)
+      if (timeron) call timer_stop(T_resid2, 1)
       call norm2u3(r,n1,n2,n3,rnm2,rnmu,nx(lt),ny(lt),nz(lt))
       old2 = rnm2
       oldu = rnmu
@@ -245,18 +245,18 @@
             write(*,80) it
    80       format('  iter ',i3)
          endif
-         if (timeron) call timer_start(T_mg3P)
+         if (timeron) call timer_start(T_mg3P, 1)
          call mg3P(u,v,r,a,c,n1,n2,n3,k)
-         if (timeron) call timer_stop(T_mg3P)
-         if (timeron) call timer_start(T_resid2)
+         if (timeron) call timer_stop(T_mg3P, 1)
+         if (timeron) call timer_start(T_resid2, 2)
          call resid(u,v,r,n1,n2,n3,a,k)
-         if (timeron) call timer_stop(T_resid2)
+         if (timeron) call timer_stop(T_resid2, 2)
       enddo
 
 
       call norm2u3(r,n1,n2,n3,rnm2,rnmu,nx(lt),ny(lt),nz(lt))
 
-      call timer_stop(T_bench)
+      call timer_stop(T_bench, 1)
 
       t = timer_read(T_bench)
 
@@ -529,7 +529,7 @@
 
       double precision r1(m), r2(m)
 
-      if (timeron) call timer_start(T_psinv)
+      if (timeron) call timer_start(T_psinv, 1)
 !$omp parallel do default(shared) private(i1,i2,i3,r1,r2) collapse(2)
       do i3=2,n3-1
          do i2=2,n2-1
@@ -553,7 +553,7 @@
             enddo
          enddo
       enddo
-      if (timeron) call timer_stop(T_psinv)
+      if (timeron) call timer_stop(T_psinv, 1)
 
 !---------------------------------------------------------------------
 !     exchange boundary points
@@ -600,7 +600,7 @@
       integer i3, i2, i1
       double precision u1(m), u2(m)
 
-      if (timeron) call timer_start(T_resid)
+      if (timeron) call timer_start(T_resid, 1)
 !$omp parallel do default(shared) private(i1,i2,i3,u1,u2) collapse(2)
       do i3=2,n3-1
          do i2=2,n2-1
@@ -624,7 +624,7 @@
             enddo
          enddo
       enddo
-      if (timeron) call timer_stop(T_resid)
+      if (timeron) call timer_stop(T_resid, 1)
 
 !---------------------------------------------------------------------
 !     exchange boundary data
@@ -669,7 +669,7 @@
 
       double precision x1(m), y1(m), x2,y2
 
-      if (timeron) call timer_start(T_rprj3)
+      if (timeron) call timer_start(T_rprj3, 1)
       if(m1k.eq.3)then
         d1 = 2
       else
@@ -718,7 +718,7 @@
 
          enddo
       enddo
-      if (timeron) call timer_stop(T_rprj3)
+      if (timeron) call timer_stop(T_rprj3, 1)
 
 
       j = k-1
@@ -767,7 +767,7 @@
 !      parameter( m=535 )
       double precision z1(m),z2(m),z3(m)
 
-      if (timeron) call timer_start(T_interp)
+      if (timeron) call timer_start(T_interp, 1)
       if( n1 .ne. 3 .and. n2 .ne. 3 .and. n3 .ne. 3 ) then
 
 !$omp parallel do default(shared) private(i1,i2,i3,z1,z2,z3) collapse(2)
@@ -897,7 +897,7 @@
 !$omp end parallel
 
       endif
-      if (timeron) call timer_stop(T_interp)
+      if (timeron) call timer_stop(T_interp, 1)
 
       if( debug_vec(0) .ge. 1 )then
          call rep_nrm(z,mm1,mm2,mm3,'z: inter',k-1)
@@ -941,7 +941,7 @@
       integer T_norm2
       parameter (T_norm2=9)
 
-      if (timeron) call timer_start(T_norm2)
+      if (timeron) call timer_start(T_norm2, 1)
       dn = 1.0d0*nx*ny*nz
 
       s=0.0D0
@@ -959,7 +959,7 @@
       enddo
 
       rnm2=sqrt( s / dn )
-      if (timeron) call timer_stop(T_norm2)
+      if (timeron) call timer_stop(T_norm2, 1)
 
       return
       end
@@ -1012,7 +1012,7 @@
       double precision u(n1,n2,n3)
       integer i1, i2, i3
 
-      if (timeron) call timer_start(T_comm3)
+      if (timeron) call timer_start(T_comm3, 1)
 !$omp parallel default(shared) private(i1,i2,i3)
 !$omp do
       do  i3=2,n3-1
@@ -1038,7 +1038,7 @@
       enddo
 !$omp end do nowait
 !$omp end parallel
-      if (timeron) call timer_stop(T_comm3)
+      if (timeron) call timer_stop(T_comm3, 1)
 
       return
       end

@@ -46,14 +46,26 @@ void tacvar_fini(void);
 /**
  * @brief Append one measured interval to the per-writer CSV.
  * Must be called after TACVAR_TIMER_END (outside the timed region).
+ * @param region_id NPB timer slot (or 0 for lmbench)
+ * @param loc_id call-site id within the same region_id (NPB); 0 for lmbench
  */
-void tacvar_csv_write_simple(int region_id,
+void tacvar_csv_write_simple(int region_id, int loc_id,
                              uint64_t raw_start, uint64_t raw_stop,
                              int64_t elapsed_ns,
                              int cpu_start, int cpu_stop,
                              const uint64_t *counter_start,
                              const uint64_t *counter_stop,
                              const uint64_t *counter_delta);
+
+/**
+ * @brief Write DATA_ROOT/Kernel.CLASS/timer_info.csv once (wx / ignore EEXIST).
+ * Rows: region_id,nloc,name. Safe for concurrent ranks (first writer wins).
+ * @return 0 on success or file already present, negative on error.
+ */
+int tacvar_write_timer_info(const int *region_ids,
+                            const int *nlocs,
+                            const char *const *names,
+                            int n);
 
 /** @brief Return the active data_YYYYMMDDTHHmmss directory path, or NULL. */
 const char *tacvar_data_dir(void);

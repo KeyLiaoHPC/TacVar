@@ -119,7 +119,7 @@
 
       call mpi_barrier(comm_work, ierr)
 
-      call timer_start(T_init)
+      call timer_start(T_init, 1)
       
 
 !---------------------------------------------------------------------
@@ -257,7 +257,7 @@
       call zero3(u,n1,n2,n3)
       call zran3(v,n1,n2,n3,nx(lt),ny(lt),k)
 
-      call timer_stop(T_init)
+      call timer_stop(T_init, 1)
       if( me .eq. root )then
          tinit = timer_read(T_init)
          write( *,'(/A,F15.3,A/)' )  &
@@ -269,7 +269,7 @@
       end do
       call mpi_barrier(comm_work,ierr)
 
-      call timer_start(T_bench)
+      call timer_start(T_bench, 1)
 
       call resid(u,v,r,n1,n2,n3,a,k)
       call norm2u3(r,n1,n2,n3,rnm2,rnmu,nx(lt),ny(lt),nz(lt))
@@ -288,7 +288,7 @@
 
       call norm2u3(r,n1,n2,n3,rnm2,rnmu,nx(lt),ny(lt),nz(lt))
 
-      call timer_stop(T_bench)
+      call timer_stop(T_bench, 1)
 
       t0 = timer_read(T_bench)
 
@@ -661,7 +661,7 @@
 
       double precision r1(m), r2(m)
       
-      if (timeron) call timer_start(t_psinv)
+      if (timeron) call timer_start(t_psinv, 1)
       do i3=2,n3-1
          do i2=2,n2-1
             do i1=1,n1
@@ -684,7 +684,7 @@
             enddo
          enddo
       enddo
-      if (timeron) call timer_stop(t_psinv)
+      if (timeron) call timer_stop(t_psinv, 1)
 
 !---------------------------------------------------------------------
 !     exchange boundary points
@@ -731,7 +731,7 @@
       integer i3, i2, i1
       double precision u1(m), u2(m)
 
-      if (timeron) call timer_start(t_resid)
+      if (timeron) call timer_start(t_resid, 1)
       do i3=2,n3-1
          do i2=2,n2-1
             do i1=1,n1
@@ -754,7 +754,7 @@
             enddo
          enddo
       enddo
-      if (timeron) call timer_stop(t_resid)
+      if (timeron) call timer_stop(t_resid, 1)
 
 !---------------------------------------------------------------------
 !     exchange boundary data
@@ -802,7 +802,7 @@
       double precision x1(m), y1(m), x2,y2
 
 
-      if (timeron) call timer_start(t_rprj3)
+      if (timeron) call timer_start(t_rprj3, 1)
       if(m1k.eq.3)then
         d1 = 2
       else
@@ -853,7 +853,7 @@
 
          enddo
       enddo
-      if (timeron) call timer_stop(t_rprj3)
+      if (timeron) call timer_stop(t_rprj3, 1)
 
 
       j = k-1
@@ -905,7 +905,7 @@
       double precision z1(m),z2(m),z3(m)
 
 
-      if (timeron) call timer_start(t_interp)
+      if (timeron) call timer_start(t_interp, 1)
       if( n1 .ne. 3 .and. n2 .ne. 3 .and. n3 .ne. 3 ) then
 
          do  i3=1,mm3-1
@@ -1023,7 +1023,7 @@
          enddo
 
       endif
-      if (timeron) call timer_stop(t_interp)
+      if (timeron) call timer_stop(t_interp, 1)
 
       call comm3_ex(u,n1,n2,n3,k)
 
@@ -1068,7 +1068,7 @@
 
       double precision dn
 
-      if (timeron) call timer_start(t_norm2u3)
+      if (timeron) call timer_start(t_norm2u3, 1)
       dn = 1.0d0*nx0*ny0*nz0
 
       s=0.0D0
@@ -1082,16 +1082,16 @@
             enddo
          enddo
       enddo
-      if (timeron) call timer_stop(t_norm2u3)
+      if (timeron) call timer_stop(t_norm2u3, 1)
 
-      if (timeron) call timer_start(t_rcomm)
+      if (timeron) call timer_start(t_rcomm, 1)
       call mpi_allreduce(rnmu,ss,1,dp_type,  &
      &     mpi_max,comm_work,ierr)
       rnmu = ss
       call mpi_allreduce(s, ss, 1, dp_type,  &
      &     mpi_sum,comm_work,ierr)
       s = ss
-      if (timeron) call timer_stop(t_rcomm)
+      if (timeron) call timer_stop(t_rcomm, 1)
       rnm2=sqrt( s / dn )
 
       return
@@ -1247,12 +1247,12 @@
 !---------------------------------------------------------------------
 !     fake message request type
 !---------------------------------------------------------------------
-      if (timeron) call timer_start(t_comm3)
+      if (timeron) call timer_start(t_comm3, 1)
 
       call mpi_irecv( buff(1,buff_id), buff_len,  &
      &     dp_type, nbr(axis,-dir,k), msg_type(axis,dir),  &
      &     comm_work, msg_id(axis,dir,1), ierr)
-      if (timeron) call timer_stop(t_comm3)
+      if (timeron) call timer_stop(t_comm3, 1)
       return
       end
 
@@ -1292,12 +1292,12 @@
                enddo
             enddo
 
-            if (timeron) call timer_start(t_comm3)
+            if (timeron) call timer_start(t_comm3, 2)
             call mpi_send(  &
      &           buff(1, buff_id ), buff_len,dp_type,  &
      &           nbr( axis, dir, k ), msg_type(axis,dir),  &
      &           comm_work, ierr)
-            if (timeron) call timer_stop(t_comm3)
+            if (timeron) call timer_stop(t_comm3, 2)
 
          else if( dir .eq. +1 ) then
 
@@ -1308,12 +1308,12 @@
                enddo
             enddo
 
-            if (timeron) call timer_start(t_comm3)
+            if (timeron) call timer_start(t_comm3, 3)
             call mpi_send(  &
      &           buff(1, buff_id ), buff_len,dp_type,  &
      &           nbr( axis, dir, k ), msg_type(axis,dir),  &
      &           comm_work, ierr)
-            if (timeron) call timer_stop(t_comm3)
+            if (timeron) call timer_stop(t_comm3, 3)
 
          endif
       endif
@@ -1328,12 +1328,12 @@
                enddo
             enddo
 
-            if (timeron) call timer_start(t_comm3)
+            if (timeron) call timer_start(t_comm3, 4)
             call mpi_send(  &
      &           buff(1, buff_id ), buff_len,dp_type,  &
      &           nbr( axis, dir, k ), msg_type(axis,dir),  &
      &           comm_work, ierr)
-            if (timeron) call timer_stop(t_comm3)
+            if (timeron) call timer_stop(t_comm3, 4)
 
          else if( dir .eq. +1 ) then
 
@@ -1344,12 +1344,12 @@
                enddo
             enddo
 
-            if (timeron) call timer_start(t_comm3)
+            if (timeron) call timer_start(t_comm3, 5)
             call mpi_send(  &
      &           buff(1, buff_id ), buff_len,dp_type,  &
      &           nbr( axis, dir, k ), msg_type(axis,dir),  &
      &           comm_work, ierr)
-            if (timeron) call timer_stop(t_comm3)
+            if (timeron) call timer_stop(t_comm3, 5)
 
          endif
       endif
@@ -1364,12 +1364,12 @@
                enddo
             enddo
 
-            if (timeron) call timer_start(t_comm3)
+            if (timeron) call timer_start(t_comm3, 6)
             call mpi_send(  &
      &           buff(1, buff_id ), buff_len,dp_type,  &
      &           nbr( axis, dir, k ), msg_type(axis,dir),  &
      &           comm_work, ierr)
-            if (timeron) call timer_stop(t_comm3)
+            if (timeron) call timer_stop(t_comm3, 6)
 
          else if( dir .eq. +1 ) then
 
@@ -1380,12 +1380,12 @@
                enddo
             enddo
 
-            if (timeron) call timer_start(t_comm3)
+            if (timeron) call timer_start(t_comm3, 7)
             call mpi_send(  &
      &           buff(1, buff_id ), buff_len,dp_type,  &
      &           nbr( axis, dir, k ), msg_type(axis,dir),  &
      &           comm_work, ierr)
-            if (timeron) call timer_stop(t_comm3)
+            if (timeron) call timer_stop(t_comm3, 7)
 
          endif
       endif
@@ -1419,9 +1419,9 @@
 
       integer i3, i2, i1
 
-      if (timeron) call timer_start(t_comm3)
+      if (timeron) call timer_start(t_comm3, 8)
       call mpi_wait( msg_id( axis, dir, 1 ),status,ierr)
-      if (timeron) call timer_stop(t_comm3)
+      if (timeron) call timer_stop(t_comm3, 8)
       buff_id = 3 + dir
       indx = 0
 
@@ -1529,12 +1529,12 @@
                enddo
             enddo
 
-            if (timeron) call timer_start(t_comm3)
+            if (timeron) call timer_start(t_comm3, 9)
             call mpi_send(  &
      &           buff(1, buff_id ), buff_len,dp_type,  &
      &           nbr( axis, dir, k ), msg_type(axis,dir),  &
      &           comm_work, ierr)
-            if (timeron) call timer_stop(t_comm3)
+            if (timeron) call timer_stop(t_comm3, 9)
 
          else if( dir .eq. +1 ) then
 
@@ -1547,12 +1547,12 @@
                enddo
             enddo
 
-            if (timeron) call timer_start(t_comm3)
+            if (timeron) call timer_start(t_comm3, 10)
             call mpi_send(  &
      &           buff(1, buff_id ), buff_len,dp_type,  &
      &           nbr( axis, dir, k ), msg_type(axis,dir),  &
      &           comm_work, ierr)
-            if (timeron) call timer_stop(t_comm3)
+            if (timeron) call timer_stop(t_comm3, 10)
 
          endif
       endif
@@ -1567,12 +1567,12 @@
                enddo
             enddo
 
-            if (timeron) call timer_start(t_comm3)
+            if (timeron) call timer_start(t_comm3, 11)
             call mpi_send(  &
      &           buff(1, buff_id ), buff_len,dp_type,  &
      &           nbr( axis, dir, k ), msg_type(axis,dir),  &
      &           comm_work, ierr)
-            if (timeron) call timer_stop(t_comm3)
+            if (timeron) call timer_stop(t_comm3, 11)
 
          else if( dir .eq. +1 ) then
 
@@ -1585,12 +1585,12 @@
                enddo
             enddo
 
-            if (timeron) call timer_start(t_comm3)
+            if (timeron) call timer_start(t_comm3, 12)
             call mpi_send(  &
      &           buff(1, buff_id ), buff_len,dp_type,  &
      &           nbr( axis, dir, k ), msg_type(axis,dir),  &
      &           comm_work, ierr)
-            if (timeron) call timer_stop(t_comm3)
+            if (timeron) call timer_stop(t_comm3, 12)
 
          endif
       endif
@@ -1605,12 +1605,12 @@
                enddo
             enddo
 
-            if (timeron) call timer_start(t_comm3)
+            if (timeron) call timer_start(t_comm3, 13)
             call mpi_send(  &
      &           buff(1, buff_id ), buff_len,dp_type,  &
      &           nbr( axis, dir, k ), msg_type(axis,dir),  &
      &           comm_work, ierr)
-            if (timeron) call timer_stop(t_comm3)
+            if (timeron) call timer_stop(t_comm3, 13)
 
          else if( dir .eq. +1 ) then
 
@@ -1623,12 +1623,12 @@
                enddo
             enddo
 
-            if (timeron) call timer_start(t_comm3)
+            if (timeron) call timer_start(t_comm3, 14)
             call mpi_send(  &
      &           buff(1, buff_id ), buff_len,dp_type,  &
      &           nbr( axis, dir, k ), msg_type(axis,dir),  &
      &           comm_work, ierr)
-            if (timeron) call timer_stop(t_comm3)
+            if (timeron) call timer_stop(t_comm3, 14)
 
          endif
       endif
@@ -1662,9 +1662,9 @@
 
       integer i3, i2, i1
 
-      if (timeron) call timer_start(t_comm3)
+      if (timeron) call timer_start(t_comm3, 15)
       call mpi_wait( msg_id( axis, dir, 1 ),status,ierr)
-      if (timeron) call timer_stop(t_comm3)
+      if (timeron) call timer_stop(t_comm3, 15)
       buff_id = 3 + dir
       indx = 0
 

@@ -21,6 +21,10 @@ ls /sys/module/ph_enable_pmu >/dev/null 2>&1 && echo kmod=yes || echo kmod=no
 bash src/measure/tests/run_unit_tests.sh
 bash src/measure/tests/run_backend_smoke.sh
 # Small suite smokes (<=4 cores); use arch-local build dirs via force rebuild in scripts
+unset TACVAR_DATA_DIR || true
 bash suites/NPB3.4.4/test_tacvar.sh --run-smoke
+echo "arm: NPB smoke finished"
+unset TACVAR_DATA_DIR || true
 bash suites/lmbench/scripts/test_tacvar.sh --run-smoke
+echo "arm: lmbench smoke finished"
 EOF

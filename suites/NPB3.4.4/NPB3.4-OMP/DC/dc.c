@@ -222,11 +222,11 @@ int32 DC(ADC_VIEW_PARS *adcpp) {
         PutErrMsg("DC.PartitionCube failed");
      }
      timer_clear(itimer);
-     timer_start(itimer);
+     timer_start(itimer, 1);
      if( ComputeGivenGroupbys(adccntlp) ) {
         PutErrMsg("DC.ComputeGivenGroupbys failed");
      }
-     timer_stop(itimer);
+     timer_stop(itimer, 1);
      tm0 = timer_read(itimer);
    }
 #ifdef _OPENMP    

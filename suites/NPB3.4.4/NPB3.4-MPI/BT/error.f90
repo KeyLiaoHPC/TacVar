@@ -20,7 +20,7 @@
       double precision xi, eta, zeta, u_exact(5), rms(5), rms_work(5),  &
      &     add
 
-      call timer_start(t_enorm)
+      call timer_start(t_enorm, 1)
 
       do m = 1, 5 
          rms_work(m) = 0.0d0
@@ -60,7 +60,7 @@
          rms(m) = dsqrt(rms(m))
       enddo
 
-      call timer_stop(t_enorm)
+      call timer_stop(t_enorm, 1)
 
       return
       end

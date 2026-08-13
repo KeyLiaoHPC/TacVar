@@ -30,7 +30,7 @@
 ! and after that reversing the direction for the backsubstitution  
 !---------------------------------------------------------------------
 
-       if (timeron) call timer_start(t_zsolve)
+       if (timeron) call timer_start(t_zsolve, 1)
 !---------------------------------------------------------------------
 !                          FORWARD ELIMINATION  
 !---------------------------------------------------------------------
@@ -57,12 +57,12 @@
 !            sides and the upper diagonal elements of the previous two rows
 !---------------------------------------------------------------------
 
-             if (timeron) call timer_start(t_zcomm)
+             if (timeron) call timer_start(t_zcomm, 1)
              call mpi_irecv(in_buffer, 22*buffer_size,  &
      &                      dp_type, predecessor(3),  &
      &                      DEFAULT_TAG, comm_solve,  &
      &                      mrequests(1), error)
-             if (timeron) call timer_stop(t_zcomm)
+             if (timeron) call timer_stop(t_zcomm, 1)
 
 
 !---------------------------------------------------------------------
@@ -74,9 +74,9 @@
 !---------------------------------------------------------------------
 !            wait for pending communication to complete
 !---------------------------------------------------------------------
-             if (timeron) call timer_start(t_zcomm)
+             if (timeron) call timer_start(t_zcomm, 2)
              call mpi_waitall(2, mrequests, mstatuses, error)
-              if (timeron) call timer_stop(t_zcomm)
+              if (timeron) call timer_stop(t_zcomm, 2)
             
 !---------------------------------------------------------------------
 !            unpack the buffer                                 
@@ -326,12 +326,12 @@
              end do
 
 
-             if (timeron) call timer_start(t_zcomm)
+             if (timeron) call timer_start(t_zcomm, 3)
              call mpi_isend(out_buffer, 22*buffer_size,  &
      &                     dp_type, successor(3),  &
      &                     DEFAULT_TAG, comm_solve,  &
      &                     mrequests(2), error)
-             if (timeron) call timer_stop(t_zcomm)
+             if (timeron) call timer_stop(t_zcomm, 3)
 
           endif
        end do
@@ -365,12 +365,12 @@
 !            solution of the previous two stations     
 !---------------------------------------------------------------------
 
-             if (timeron) call timer_start(t_zcomm)
+             if (timeron) call timer_start(t_zcomm, 4)
              call mpi_irecv(in_buffer, 10*buffer_size,  &
      &                      dp_type, successor(3),  &
      &                      DEFAULT_TAG, comm_solve,  &
      &                      mrequests(1), error)
-             if (timeron) call timer_stop(t_zcomm)
+             if (timeron) call timer_stop(t_zcomm, 4)
 
 
 !---------------------------------------------------------------------
@@ -384,9 +384,9 @@
 !---------------------------------------------------------------------
 !            wait for pending communication to complete
 !---------------------------------------------------------------------
-             if (timeron) call timer_start(t_zcomm)
+             if (timeron) call timer_start(t_zcomm, 5)
              call mpi_waitall(2, mrequests, mstatuses, error)
-             if (timeron) call timer_stop(t_zcomm)
+             if (timeron) call timer_stop(t_zcomm, 5)
 
 !---------------------------------------------------------------------
 !            unpack the buffer for the first three factors         
@@ -519,12 +519,12 @@
                 end do
              end do
 
-             if (timeron) call timer_start(t_zcomm)
+             if (timeron) call timer_start(t_zcomm, 6)
              call mpi_isend(out_buffer, 10*buffer_size,  &
      &                     dp_type, predecessor(3),  &
      &                     DEFAULT_TAG, comm_solve,  &
      &                     mrequests(2), error)
-             if (timeron) call timer_stop(t_zcomm)
+             if (timeron) call timer_stop(t_zcomm, 6)
 
           endif
 
@@ -535,7 +535,7 @@
 
        end do
 
-       if (timeron) call timer_stop(t_zsolve)
+       if (timeron) call timer_stop(t_zsolve, 1)
 
        return
        end

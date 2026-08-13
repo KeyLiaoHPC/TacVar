@@ -29,7 +29,7 @@
       double precision  u21km1, u31km1, u41km1, u51km1
 
 
-      if (timeron) call timer_start(t_rhs)
+      if (timeron) call timer_start(t_rhs, 1)
 
 !$omp parallel default(shared) private(i,j,k,m,q,tmp,utmp,rtmp,  &
 !$omp& u51im1,u41im1,u31im1,u21im1,u51i,u41i,u31i,u21i,u21,  &
@@ -54,7 +54,7 @@
 !$omp end do
 
 !$omp master
-      if (timeron) call timer_start(t_rhsx)
+      if (timeron) call timer_start(t_rhsx, 1)
 !$omp end master
 !---------------------------------------------------------------------
 !   xi-direction flux differences
@@ -179,9 +179,9 @@
       end do
 !$omp end do
 !$omp master
-      if (timeron) call timer_stop(t_rhsx)
+      if (timeron) call timer_stop(t_rhsx, 1)
 
-      if (timeron) call timer_start(t_rhsy)
+      if (timeron) call timer_start(t_rhsy, 1)
 !$omp end master
 !---------------------------------------------------------------------
 !   eta-direction flux differences
@@ -335,9 +335,9 @@
       end do
 !$omp end do
 !$omp master
-      if (timeron) call timer_stop(t_rhsy)
+      if (timeron) call timer_stop(t_rhsy, 1)
 
-      if (timeron) call timer_start(t_rhsz)
+      if (timeron) call timer_start(t_rhsz, 1)
 !$omp end master
 !---------------------------------------------------------------------
 !   zeta-direction flux differences
@@ -466,11 +466,11 @@
       end do
 !$omp end do nowait
 !$omp master
-      if (timeron) call timer_stop(t_rhsz)
+      if (timeron) call timer_stop(t_rhsz, 1)
 !$omp end master
 !$omp end parallel
 
-      if (timeron) call timer_stop(t_rhs)
+      if (timeron) call timer_stop(t_rhs, 1)
 
       return
       end

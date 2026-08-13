@@ -14,7 +14,7 @@
      &     wijk, wp1, wm1
 
 
-      if (timeron) call timer_start(t_rhs)
+      if (timeron) call timer_start(t_rhs, 1)
 !---------------------------------------------------------------------
 !     loop over all cells owned by this node                           
 !---------------------------------------------------------------------
@@ -419,7 +419,7 @@
 
       enddo
      
-      if (timeron) call timer_stop(t_rhs)
+      if (timeron) call timer_stop(t_rhs, 1)
      
       return
       end

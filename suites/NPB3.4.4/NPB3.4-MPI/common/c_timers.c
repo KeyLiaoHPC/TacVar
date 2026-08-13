@@ -8,8 +8,8 @@
 #include "tacvar_npb.h"
 
 void timer_clear(int n) { tacvar_npb_timer_clear(n); }
-void timer_start(int n) { tacvar_npb_timer_start(n); }
-void timer_stop(int n)  { tacvar_npb_timer_stop(n); }
+void timer_start(int n, int loc_id) { tacvar_npb_timer_start(n, loc_id); }
+void timer_stop(int n, int loc_id)  { tacvar_npb_timer_stop(n, loc_id); }
 double timer_read(int n) { return tacvar_npb_timer_read(n); }
 
 int check_timer_flag(void)

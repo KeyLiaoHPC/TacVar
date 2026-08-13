@@ -62,7 +62,7 @@
 ! but can send all face information simultaneously to the neighboring 
 ! cells in all directions          
 !---------------------------------------------------------------------
-       if (timeron) call timer_start(t_bpack)
+       if (timeron) call timer_start(t_bpack, 1)
        p0 = 0
        p1 = 0
        p2 = 0
@@ -168,9 +168,9 @@
 !       cell loop
 !---------------------------------------------------------------------
         end do
-       if (timeron) call timer_stop(t_bpack)
+       if (timeron) call timer_stop(t_bpack, 1)
 
-       if (timeron) call timer_start(t_exch)
+       if (timeron) call timer_start(t_exch, 1)
        call mpi_irecv(in_buffer(sr(0)), b_size(0),  &
      &                dp_type, successor(1), WEST,  &
      &                comm_rhs, requests(0), error)
@@ -211,12 +211,12 @@
 
 
        call mpi_waitall(12, requests, statuses, error)
-       if (timeron) call timer_stop(t_exch)
+       if (timeron) call timer_stop(t_exch, 1)
 
 !---------------------------------------------------------------------
 ! unpack the data that has just been received;             
 !---------------------------------------------------------------------
-       if (timeron) call timer_start(t_bpack)
+       if (timeron) call timer_start(t_bpack, 2)
        p0 = 0
        p1 = 0
        p2 = 0
@@ -303,7 +303,7 @@
 !      cells loop
 !---------------------------------------------------------------------
        end do
-       if (timeron) call timer_stop(t_bpack)
+       if (timeron) call timer_stop(t_bpack, 2)
 
 !---------------------------------------------------------------------
 ! now that we have all the data, compute the rhs

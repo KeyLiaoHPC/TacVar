@@ -1,6 +1,6 @@
 /**
  * @file tacvar_npb.c
- * @brief NPB-MPI TacVar timers + MPI rank/dir context.
+ * @brief NPB-MPI TacVar timers + MPI rank/dir context + timer_info.csv.
  */
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
@@ -24,17 +24,134 @@
 #define TACVAR_COUNTER_COUNT 0
 #endif
 
-static double elapsed[64];
-static uint64_t timer_start_raw[64];
-static int cpu_start_slot[64];
+#define TACVAR_NPB_SLOTS 64
+
+static double elapsed[TACVAR_NPB_SLOTS];
+static uint64_t timer_start_raw[TACVAR_NPB_SLOTS];
+static int cpu_start_slot[TACVAR_NPB_SLOTS];
+static int max_loc[TACVAR_NPB_SLOTS];
 #if TACVAR_COUNTER_COUNT > 0
-static uint64_t counter_start_slot[64][TACVAR_COUNTER_COUNT];
+static uint64_t counter_start_slot[TACVAR_NPB_SLOTS][TACVAR_COUNTER_COUNT];
 #endif
 
 static char g_bench[64];
 static char g_class[8];
 static int g_identity_set;
 static int g_init_warned;
+static int g_rank;
+static int g_timer_info_registered;
+
+typedef struct {
+    int region_id;
+    const char *name;
+} tacvar_npb_name_t;
+
+/* Names for timed slots only (no derived totcomp/totcomm). */
+static const tacvar_npb_name_t names_is[] = {
+    {0, "total"}, {1, "rcomp"}, {2, "rcomm"}, {3, "verify"},
+};
+static const tacvar_npb_name_t names_cg[] = {
+    {1, "total"}, {2, "conjg"}, {3, "rcomm"}, {4, "ncomm"},
+};
+static const tacvar_npb_name_t names_mg[] = {
+    {1, "total"}, {2, "init"}, {3, "psinv"}, {4, "resid"},
+    {5, "rprj3"}, {6, "interp"}, {7, "norm2u3"}, {8, "comm3"}, {9, "rcomm"},
+};
+static const tacvar_npb_name_t names_ep[] = {
+    {1, "total"}, {2, "gpairs"}, {3, "randn"}, {4, "rcomm"},
+};
+static const tacvar_npb_name_t names_bt[] = {
+    {1, "total"}, {2, "i/o"}, {3, "rhs"}, {4, "xsolve"}, {5, "ysolve"},
+    {6, "zsolve"}, {7, "bpack"}, {8, "exch"}, {9, "xcomm"}, {10, "ycomm"},
+    {11, "zcomm"}, {12, "enorm"}, {13, "iov"},
+};
+static const tacvar_npb_name_t names_sp[] = {
+    {1, "total"}, {2, "rhs"}, {3, "xsolve"}, {4, "ysolve"}, {5, "zsolve"},
+    {6, "bpack"}, {7, "exch"}, {8, "xcomm"}, {9, "ycomm"}, {10, "zcomm"},
+};
+static const tacvar_npb_name_t names_lu[] = {
+    {1, "total"}, {2, "rhs"}, {3, "blts"}, {4, "buts"}, {5, "jacld"},
+    {6, "jacu"}, {7, "exch"}, {8, "lcomm"}, {9, "ucomm"}, {10, "rcomm"},
+};
+static const tacvar_npb_name_t names_ft[] = {
+    {1, "total"}, {2, "setup"}, {3, "fft"}, {4, "evolve"}, {5, "checksum"},
+    {6, "fftlow"}, {7, "fftcopy"}, {8, "transpose"},
+    {9, "transxzloc"}, {10, "transxzglo"}, {11, "transxzfin"},
+    {12, "transxyloc"}, {13, "transxyglo"}, {14, "transxyfin"},
+    {15, "synch"}, {16, "init"},
+};
+
+static const tacvar_npb_name_t *lookup_names(int *n_out)
+{
+    if (!strcmp(g_bench, "is")) { *n_out = (int)(sizeof(names_is)/sizeof(names_is[0])); return names_is; }
+    if (!strcmp(g_bench, "cg")) { *n_out = (int)(sizeof(names_cg)/sizeof(names_cg[0])); return names_cg; }
+    if (!strcmp(g_bench, "mg")) { *n_out = (int)(sizeof(names_mg)/sizeof(names_mg[0])); return names_mg; }
+    if (!strcmp(g_bench, "ep")) { *n_out = (int)(sizeof(names_ep)/sizeof(names_ep[0])); return names_ep; }
+    if (!strcmp(g_bench, "bt")) { *n_out = (int)(sizeof(names_bt)/sizeof(names_bt[0])); return names_bt; }
+    if (!strcmp(g_bench, "sp")) { *n_out = (int)(sizeof(names_sp)/sizeof(names_sp[0])); return names_sp; }
+    if (!strcmp(g_bench, "lu")) { *n_out = (int)(sizeof(names_lu)/sizeof(names_lu[0])); return names_lu; }
+    if (!strcmp(g_bench, "ft")) { *n_out = (int)(sizeof(names_ft)/sizeof(names_ft[0])); return names_ft; }
+    *n_out = 0;
+    return NULL;
+}
+
+static void note_loc(int n, int loc_id)
+{
+    if (n < 0 || n >= TACVAR_NPB_SLOTS)
+        return;
+    if (loc_id > max_loc[n])
+        max_loc[n] = loc_id;
+}
+
+static void write_timer_info_atexit(void)
+{
+    const tacvar_npb_name_t *names;
+    int nnames, i, n;
+    int region_ids[TACVAR_NPB_SLOTS];
+    int nlocs[TACVAR_NPB_SLOTS];
+    const char *nameptrs[TACVAR_NPB_SLOTS];
+    char fallback[TACVAR_NPB_SLOTS][16];
+    int have_name[TACVAR_NPB_SLOTS];
+
+    if (g_rank != 0 || !tacvar_is_ready())
+        return;
+
+    memset(have_name, 0, sizeof(have_name));
+    names = lookup_names(&nnames);
+    for (i = 0; i < nnames; i++) {
+        int rid = names[i].region_id;
+        if (rid >= 0 && rid < TACVAR_NPB_SLOTS) {
+            have_name[rid] = 1;
+            if (max_loc[rid] < 1)
+                max_loc[rid] = 1; /* region exists in catalog */
+        }
+    }
+
+    n = 0;
+    for (i = 0; i < TACVAR_NPB_SLOTS; i++) {
+        if (max_loc[i] <= 0 && !have_name[i])
+            continue;
+        region_ids[n] = i;
+        nlocs[n] = max_loc[i] > 0 ? max_loc[i] : 1;
+        nameptrs[n] = NULL;
+        if (names) {
+            int j;
+            for (j = 0; j < nnames; j++) {
+                if (names[j].region_id == i) {
+                    nameptrs[n] = names[j].name;
+                    break;
+                }
+            }
+        }
+        if (!nameptrs[n]) {
+            snprintf(fallback[n], sizeof(fallback[n]), "r%d", i);
+            nameptrs[n] = fallback[n];
+        }
+        n++;
+    }
+    if (n > 0)
+        (void)tacvar_write_timer_info(region_ids, nlocs, nameptrs, n);
+}
 
 static void set_identity(void)
 {
@@ -78,6 +195,7 @@ int tacvar_npb_ensure_init(void)
     set_identity();
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+    g_rank = rank;
 
     memset(&ctx, 0, sizeof(ctx));
     dirbuf[0] = '\0';
@@ -109,23 +227,31 @@ int tacvar_npb_ensure_init(void)
         if (tacvar_init(&ctx) != 0)
             return -1;
     }
+    if (!g_timer_info_registered) {
+        atexit(write_timer_info_atexit);
+        g_timer_info_registered = 1;
+    }
     return 0;
 }
 
 void tacvar_npb_timer_clear(int n)
 {
+    if (n < 0 || n >= TACVAR_NPB_SLOTS)
+        return;
     elapsed[n] = 0.0;
 }
 
-void tacvar_npb_timer_start(int n)
+void tacvar_npb_timer_start(int n, int loc_id)
 {
+    if (n < 0 || n >= TACVAR_NPB_SLOTS)
+        return;
     if (!tacvar_is_ready()) {
         if (tacvar_npb_ensure_init() != 0 && !g_init_warned) {
-            /* native timers need no TIMER_INIT; TSC may be wrong if init never ran. */
             fprintf(stderr, "tacvar: NPB-MPI init failed; counters/CSV disabled\n");
             g_init_warned = 1;
         }
     }
+    note_loc(n, loc_id);
     cpu_start_slot[n] = sched_getcpu();
 #if TACVAR_COUNTER_COUNT > 0
     if (tacvar_is_ready())
@@ -134,7 +260,7 @@ void tacvar_npb_timer_start(int n)
     TACVAR_TIMER_BEGIN(timer_start_raw[n]);
 }
 
-void tacvar_npb_timer_stop(int n)
+void tacvar_npb_timer_stop(int n, int loc_id)
 {
     uint64_t timer_stop_raw = 0;
     int64_t elapsed_ns;
@@ -143,6 +269,9 @@ void tacvar_npb_timer_stop(int n)
     uint64_t counter_stop[TACVAR_COUNTER_COUNT];
     uint64_t counter_delta[TACVAR_COUNTER_COUNT];
 #endif
+
+    if (n < 0 || n >= TACVAR_NPB_SLOTS)
+        return;
 
     TACVAR_TIMER_END(timer_stop_raw);
 #if TACVAR_COUNTER_COUNT > 0
@@ -154,10 +283,11 @@ void tacvar_npb_timer_stop(int n)
     cpu_stop = sched_getcpu();
     elapsed_ns = TACVAR_TIMER_DELTA_NS(timer_start_raw[n], timer_stop_raw);
     elapsed[n] += (double)elapsed_ns * 1e-9;
+    note_loc(n, loc_id);
 
     if (tacvar_is_ready()) {
-        tacvar_csv_write_simple(n, timer_start_raw[n], timer_stop_raw, elapsed_ns,
-                                cpu_start_slot[n], cpu_stop,
+        tacvar_csv_write_simple(n, loc_id, timer_start_raw[n], timer_stop_raw,
+                                elapsed_ns, cpu_start_slot[n], cpu_stop,
 #if TACVAR_COUNTER_COUNT > 0
                                 counter_start_slot[n], counter_stop, counter_delta
 #else
@@ -169,5 +299,7 @@ void tacvar_npb_timer_stop(int n)
 
 double tacvar_npb_timer_read(int n)
 {
+    if (n < 0 || n >= TACVAR_NPB_SLOTS)
+        return 0.0;
     return elapsed[n];
 }

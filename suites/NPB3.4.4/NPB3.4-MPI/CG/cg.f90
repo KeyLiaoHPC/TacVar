@@ -240,7 +240,7 @@
             norm_temp1(2) = norm_temp1(2) + z(j)*z(j)
          enddo
 
-         if (timeron) call timer_start(t_ncomm)
+         if (timeron) call timer_start(t_ncomm, 1)
          do i = 1, l2npcols
             call mpi_irecv( norm_temp2,  &
      &                      2,  &
@@ -262,7 +262,7 @@
             norm_temp1(1) = norm_temp1(1) + norm_temp2(1)
             norm_temp1(2) = norm_temp1(2) + norm_temp2(2)
          enddo
-         if (timeron) call timer_stop(t_ncomm)
+         if (timeron) call timer_stop(t_ncomm, 1)
 
          norm_temp1(2) = 1.0d0 / sqrt( norm_temp1(2) )
 
@@ -299,7 +299,7 @@
       call mpi_barrier( comm_solve, ierr )
 
       call timer_clear( 1 )
-      call timer_start( 1 )
+      call timer_start( 1, 1)
 
 !---------------------------------------------------------------------
 !---->
@@ -327,7 +327,7 @@
             norm_temp1(2) = norm_temp1(2) + z(j)*z(j)
          enddo
 
-         if (timeron) call timer_start(t_ncomm)
+         if (timeron) call timer_start(t_ncomm, 2)
          do i = 1, l2npcols
             call mpi_irecv( norm_temp2,  &
      &                      2,  &
@@ -349,7 +349,7 @@
             norm_temp1(1) = norm_temp1(1) + norm_temp2(1)
             norm_temp1(2) = norm_temp1(2) + norm_temp2(2)
          enddo
-         if (timeron) call timer_stop(t_ncomm)
+         if (timeron) call timer_stop(t_ncomm, 2)
 
          norm_temp1(2) = 1.0d0 / sqrt( norm_temp1(2) )
 
@@ -373,7 +373,7 @@
 
       enddo                              ! end of main iter inv pow meth
 
-      call timer_stop( 1 )
+      call timer_stop( 1, 1)
 
 !---------------------------------------------------------------------
 !  End of timed section
@@ -783,7 +783,7 @@
       data      cgitmax / 25 /
 
 
-      if (timeron) call timer_start(t_conjg)
+      if (timeron) call timer_start(t_conjg, 1)
 !---------------------------------------------------------------------
 !  Initialize the CG algorithm:
 !---------------------------------------------------------------------
@@ -810,7 +810,7 @@
 !  (This is equivalent to mpi_allreduce.)
 !  Sum the partial sums of rho, leaving rho on all processors
 !---------------------------------------------------------------------
-      if (timeron) call timer_start(t_rcomm)
+      if (timeron) call timer_start(t_rcomm, 1)
       do i = 1, l2npcols
          call mpi_irecv( rho,  &
      &                   1,  &
@@ -831,7 +831,7 @@
 
          sum = sum + rho
       enddo
-      if (timeron) call timer_stop(t_rcomm)
+      if (timeron) call timer_stop(t_rcomm, 1)
       rho = sum
 
 
@@ -860,7 +860,7 @@
 !  Sum the partition submatrix-vec A.p's across rows
 !  Exchange and sum piece of w with procs identified in reduce_exch_proc
 !---------------------------------------------------------------------
-         if (timeron) call timer_start(t_rcomm)
+         if (timeron) call timer_start(t_rcomm, 2)
          do i = l2npcols, 1, -1
             call mpi_irecv( q(reduce_recv_starts(i)),  &
      &                      reduce_recv_lengths(i),  &
@@ -882,14 +882,14 @@
                w(j) = w(j) + q(j)
             enddo
          enddo
-         if (timeron) call timer_stop(t_rcomm)
+         if (timeron) call timer_stop(t_rcomm, 2)
 
 
 !---------------------------------------------------------------------
 !  Exchange piece of q with transpose processor:
 !---------------------------------------------------------------------
          if( l2npcols .ne. 0 )then
-            if (timeron) call timer_start(t_rcomm)
+            if (timeron) call timer_start(t_rcomm, 3)
             call mpi_irecv( q,               &
      &                      exch_recv_length,  &
      &                      dp_type,  &
@@ -907,7 +907,7 @@
      &                      comm_solve,  &
      &                      ierr )
             call mpi_wait( request, status, ierr )
-            if (timeron) call timer_stop(t_rcomm)
+            if (timeron) call timer_stop(t_rcomm, 3)
          else
             do j=1,exch_recv_length
                q(j) = w(j)
@@ -934,7 +934,7 @@
 !---------------------------------------------------------------------
 !  Obtain d with a sum-reduce
 !---------------------------------------------------------------------
-         if (timeron) call timer_start(t_rcomm)
+         if (timeron) call timer_start(t_rcomm, 4)
          do i = 1, l2npcols
             call mpi_irecv( d,  &
      &                      1,  &
@@ -956,7 +956,7 @@
 
             sum = sum + d
          enddo
-         if (timeron) call timer_stop(t_rcomm)
+         if (timeron) call timer_stop(t_rcomm, 4)
          d = sum
 
 
@@ -991,7 +991,7 @@
 !---------------------------------------------------------------------
 !  Obtain rho with a sum-reduce
 !---------------------------------------------------------------------
-         if (timeron) call timer_start(t_rcomm)
+         if (timeron) call timer_start(t_rcomm, 5)
          do i = 1, l2npcols
             call mpi_irecv( rho,  &
      &                      1,  &
@@ -1012,7 +1012,7 @@
 
             sum = sum + rho
          enddo
-         if (timeron) call timer_stop(t_rcomm)
+         if (timeron) call timer_stop(t_rcomm, 5)
          rho = sum
 
 !---------------------------------------------------------------------
@@ -1051,7 +1051,7 @@
 !---------------------------------------------------------------------
 !  Sum the partition submatrix-vec A.z's across rows
 !---------------------------------------------------------------------
-      if (timeron) call timer_start(t_rcomm)
+      if (timeron) call timer_start(t_rcomm, 6)
       do i = l2npcols, 1, -1
          call mpi_irecv( r(reduce_recv_starts(i)),  &
      &                   reduce_recv_lengths(i),  &
@@ -1074,14 +1074,14 @@
             w(j) = w(j) + r(j)
          enddo
       enddo
-      if (timeron) call timer_stop(t_rcomm)
+      if (timeron) call timer_stop(t_rcomm, 6)
       
 
 !---------------------------------------------------------------------
 !  Exchange piece of q with transpose processor:
 !---------------------------------------------------------------------
       if( l2npcols .ne. 0 )then
-         if (timeron) call timer_start(t_rcomm)
+         if (timeron) call timer_start(t_rcomm, 7)
          call mpi_irecv( r,               &
      &                   exch_recv_length,  &
      &                   dp_type,  &
@@ -1099,7 +1099,7 @@
      &                   comm_solve,  &
      &                   ierr )
          call mpi_wait( request, status, ierr )
-         if (timeron) call timer_stop(t_rcomm)
+         if (timeron) call timer_stop(t_rcomm, 7)
       else
          do j=1,exch_recv_length
             r(j) = w(j)
@@ -1119,7 +1119,7 @@
 !---------------------------------------------------------------------
 !  Obtain d with a sum-reduce
 !---------------------------------------------------------------------
-      if (timeron) call timer_start(t_rcomm)
+      if (timeron) call timer_start(t_rcomm, 8)
       do i = 1, l2npcols
          call mpi_irecv( d,  &
      &                   1,  &
@@ -1140,13 +1140,13 @@
 
          sum = sum + d
       enddo
-      if (timeron) call timer_stop(t_rcomm)
+      if (timeron) call timer_stop(t_rcomm, 8)
       d = sum
 
 
       if( me .eq. root ) rnorm = sqrt( d )
 
-      if (timeron) call timer_stop(t_conjg)
+      if (timeron) call timer_stop(t_conjg, 1)
 
 
       return

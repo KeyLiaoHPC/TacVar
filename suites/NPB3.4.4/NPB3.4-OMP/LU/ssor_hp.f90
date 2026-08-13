@@ -53,7 +53,7 @@
       do i = 1, t_last
          call timer_clear(i)
       end do
-      call timer_start(1)
+      call timer_start(1, 1)
  
 !---------------------------------------------------------------------
 !   the timestep loop
@@ -75,7 +75,7 @@
 !$omp parallel default(shared) private(i,j,k,m,l,tmp2)  &
 !$omp&  shared(ist,iend,jst,jend,nx,ny,nz,nx0,ny0,omega,lst,lend)
 !$omp master
-         if (timeron) call timer_start(t_rhs)
+         if (timeron) call timer_start(t_rhs, 1)
 !$omp end master
          tmp2 = dt
 !$omp do schedule(static) collapse(2)
@@ -90,9 +90,9 @@
          end do
 !$omp end do
 !$omp master
-         if (timeron) call timer_stop(t_rhs)
+         if (timeron) call timer_stop(t_rhs, 1)
 
-         if (timeron) call timer_start(t_blts)
+         if (timeron) call timer_start(t_blts, 1)
 !$omp end master
          do l = lst, lend
 !$omp do schedule(static)
@@ -118,9 +118,9 @@
 !$omp end do
          end do
 !$omp master
-         if (timeron) call timer_stop(t_blts)
+         if (timeron) call timer_stop(t_blts, 1)
 
-         if (timeron) call timer_start(t_buts)
+         if (timeron) call timer_start(t_buts, 1)
 !$omp end master
          do l = lend, lst, -1
 !$omp do schedule(static)
@@ -146,7 +146,7 @@
 !$omp end do
          end do
 !$omp master
-         if (timeron) call timer_stop(t_buts)
+         if (timeron) call timer_stop(t_buts, 1)
 !$omp end master
 
 !---------------------------------------------------------------------
@@ -154,7 +154,7 @@
 !---------------------------------------------------------------------
 
 !$omp master
-         if (timeron) call timer_start(t_add)
+         if (timeron) call timer_start(t_add, 1)
 !$omp end master
          tmp2 = tmp
 !$omp do schedule(static) collapse(2)
@@ -170,7 +170,7 @@
          end do
 !$omp end do nowait
 !$omp master
-         if (timeron) call timer_stop(t_add)
+         if (timeron) call timer_stop(t_add, 1)
 !$omp end master
 !$omp end parallel
  
@@ -178,11 +178,11 @@
 !   compute the max-norms of newton iteration corrections
 !---------------------------------------------------------------------
          if ( mod ( istep, inorm ) .eq. 0 ) then
-            if (timeron) call timer_start(t_l2norm)
+            if (timeron) call timer_start(t_l2norm, 1)
             call l2norm( isiz1, isiz2, isiz3, nx0, ny0, nz0,  &
      &                   ist, iend, jst, jend,  &
      &                   rsd, delunm )
-            if (timeron) call timer_stop(t_l2norm)
+            if (timeron) call timer_stop(t_l2norm, 1)
 !            if ( ipr .eq. 1 ) then
 !                write (*,1006) ( delunm(m), m = 1, 5 )
 !            else if ( ipr .eq. 2 ) then
@@ -200,11 +200,11 @@
 !---------------------------------------------------------------------
          if ( ( mod ( istep, inorm ) .eq. 0 ) .or.  &
      &        ( istep .eq. itmax ) ) then
-            if (timeron) call timer_start(t_l2norm)
+            if (timeron) call timer_start(t_l2norm, 2)
             call l2norm( isiz1, isiz2, isiz3, nx0, ny0, nz0,  &
      &                   ist, iend, jst, jend,  &
      &                   rsd, rsdnm )
-            if (timeron) call timer_stop(t_l2norm)
+            if (timeron) call timer_stop(t_l2norm, 2)
 !            if ( ipr .eq. 1 ) then
 !                write (*,1007) ( rsdnm(m), m = 1, 5 )
 !            end if
@@ -227,7 +227,7 @@
       end do
   900 continue
  
-      call timer_stop(1)
+      call timer_stop(1, 1)
       maxtime= timer_read(1)
  
 

@@ -119,9 +119,9 @@
 !---------------------------------------------------------------------
 
         if (iotype .ne. 0) then
-           call timer_start(t_iov)
+           call timer_start(t_iov, 1)
            call accumulate_norms(xce)
-           call timer_stop(t_iov)
+           call timer_stop(t_iov, 1)
         else
            call error_norm(xce)
         endif

@@ -117,7 +117,7 @@
       if (timers_enabled) call timer_clear(3)
 !$omp end parallel
 
-      call timer_start(1)
+      call timer_start(1, 1)
 
       t1 = a
       call vranlc(0, t1, a, x)
@@ -160,7 +160,7 @@
 
 !        Find starting seed t1 for this kk.
 
-         if (timers_enabled) call timer_start(3)
+         if (timers_enabled) call timer_start(3, 1)
          do 120 i = 1, 100
             ik = kk / 2
             if (2 * ik .ne. kk) t3 = randlc(t1, t2)
@@ -173,13 +173,13 @@
  130     continue
 
          call vranlc(2 * nk, t1, a, x)
-         if (timers_enabled) call timer_stop(3)
+         if (timers_enabled) call timer_stop(3, 1)
 
 !        Compute Gaussian deviates by acceptance-rejection method and 
 !        tally counts in concentric square annuli.  This loop is not 
 !        vectorizable. 
 
-         if (timers_enabled) call timer_start(2)
+         if (timers_enabled) call timer_start(2, 1)
 
          do 140 i = 1, nk
             x1 = 2.d0 * x(2*i-1) - 1.d0
@@ -196,7 +196,7 @@
             endif
  140     continue
 
-         if (timers_enabled) call timer_stop(2)
+         if (timers_enabled) call timer_stop(2, 1)
 
  150  continue
 !$omp end do nowait
@@ -211,7 +211,7 @@
          gc = gc + q(i)
  160  continue
 
-      call timer_stop(1)
+      call timer_stop(1, 1)
       tm  = timer_read(1)
 
       call verify(m, sx, sy, gc, verified, classv)

@@ -1,6 +1,5 @@
 !---------------------------------------------------------------------
 ! NPB-MPI Fortran timers — bind(C) to tacvar_npb_* (shared with C path).
-! Benchmark sources unchanged; only this common timer layer is hooked.
 !---------------------------------------------------------------------
 
       module tacvar_npb_c
@@ -11,13 +10,15 @@
             import :: c_int
             integer(c_int), value :: n
           end subroutine
-          subroutine tacvar_npb_timer_start(n) bind(C, name="tacvar_npb_timer_start")
+          subroutine tacvar_npb_timer_start(n, loc_id) bind(C, name="tacvar_npb_timer_start")
             import :: c_int
             integer(c_int), value :: n
+            integer(c_int), value :: loc_id
           end subroutine
-          subroutine tacvar_npb_timer_stop(n) bind(C, name="tacvar_npb_timer_stop")
+          subroutine tacvar_npb_timer_stop(n, loc_id) bind(C, name="tacvar_npb_timer_stop")
             import :: c_int
             integer(c_int), value :: n
+            integer(c_int), value :: loc_id
           end subroutine
           function tacvar_npb_timer_read(n) bind(C, name="tacvar_npb_timer_read")
             import :: c_int, c_double
@@ -36,21 +37,21 @@
       return
       end
 
-      subroutine timer_start(n)
+      subroutine timer_start(n, loc_id)
       use tacvar_npb_c
       use, intrinsic :: iso_c_binding, only: c_int
       implicit none
-      integer n
-      call tacvar_npb_timer_start(int(n, kind=c_int))
+      integer n, loc_id
+      call tacvar_npb_timer_start(int(n, kind=c_int), int(loc_id, kind=c_int))
       return
       end
 
-      subroutine timer_stop(n)
+      subroutine timer_stop(n, loc_id)
       use tacvar_npb_c
       use, intrinsic :: iso_c_binding, only: c_int
       implicit none
-      integer n
-      call tacvar_npb_timer_stop(int(n, kind=c_int))
+      integer n, loc_id
+      call tacvar_npb_timer_stop(int(n, kind=c_int), int(loc_id, kind=c_int))
       return
       end
 

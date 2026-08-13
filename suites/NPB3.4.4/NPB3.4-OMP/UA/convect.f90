@@ -22,7 +22,7 @@
       logical ifmortar
       parameter (sixth=1.d0/6.d0)
 
-      if (timeron) call timer_start(t_convect)
+      if (timeron) call timer_start(t_convect, 1)
       pidivalpha = dacos(-1.d0)/alpha
       alpha2     = alpha*alpha
       dtime2     = dtime/2.d0 
@@ -207,20 +207,20 @@
 
 !.....get mortar for intial guess for CG
 
-      if (timeron) call timer_start(t_transfb_c)
+      if (timeron) call timer_start(t_transfb_c, 1)
       if(ifmortar)then
         call transfb_c_2(ta1)
       else
         call transfb_c(ta1)
       end if
-      if (timeron) call timer_stop(t_transfb_c)
+      if (timeron) call timer_stop(t_transfb_c, 1)
 
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(i)
       do i=1,nmor
        tmort(i)=tmort(i)/mormult(i)
       end do
 !$OMP END PARALLEL DO
-      if (timeron) call timer_stop(t_convect)
+      if (timeron) call timer_stop(t_convect, 1)
 
       return
       end

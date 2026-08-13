@@ -74,7 +74,7 @@
       call MPI_BARRIER( comm_solve, IERROR )
  
       call timer_clear(1)
-      call timer_start(1)
+      call timer_start(1, 1)
 
 !---------------------------------------------------------------------
 !   the timestep loop
@@ -203,7 +203,7 @@
       end do
   900 continue
  
-      call timer_stop(1)
+      call timer_stop(1, 1)
       wtime = timer_read(1)
  
 

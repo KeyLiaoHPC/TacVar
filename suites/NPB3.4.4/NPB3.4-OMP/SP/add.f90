@@ -16,7 +16,7 @@
 
        integer i,j,k,m
 
-       if (timeron) call timer_start(t_add)
+       if (timeron) call timer_start(t_add, 1)
 !$omp parallel do default(shared) private(i,j,k,m) collapse(2)
        do k = 1, nz2
           do j = 1, ny2
@@ -27,7 +27,7 @@
              end do
           end do
        end do
-       if (timeron) call timer_stop(t_add)
+       if (timeron) call timer_stop(t_add, 1)
 
        return
        end

@@ -907,7 +907,7 @@ int main( int argc, char **argv )
         timer_clear( 3 );
     }
 
-    if (timer_on) timer_start( 3 );
+    if (timer_on) timer_start( 3, 1);
 
 
 /*  Initialize the verification arrays if a valid class */
@@ -956,14 +956,14 @@ int main( int argc, char **argv )
 #endif
     printf( "\n" );
 
-    if (timer_on) timer_start( 1 );
+    if (timer_on) timer_start( 1, 1);
 
 /*  Generate random number sequence and subsequent keys on all procs */
     create_seq( 314159265.00,                    /* Random number gen seed */
                 1220703125.00 );                 /* Random number gen mult */
 
     alloc_key_buff();
-    if (timer_on) timer_stop( 1 );
+    if (timer_on) timer_stop( 1, 1);
 
 
 /*  Do one interation for free (i.e., untimed) to guarantee initialization of  
@@ -976,7 +976,7 @@ int main( int argc, char **argv )
     if( CLASS != 'S' ) printf( "\n   iteration\n" );
 
 /*  Start timer  */             
-    timer_start( 0 );
+    timer_start( 0, 1);
 
 
 /*  This is the main iteration */
@@ -988,17 +988,17 @@ int main( int argc, char **argv )
 
 
 /*  End of timing, obtain maximum time of all processors */
-    timer_stop( 0 );
+    timer_stop( 0, 1);
     timecounter = timer_read( 0 );
 
 
 /*  This tests that keys are in sequence: sorting of last ranked key seq
     occurs here, but is an untimed operation                             */
-    if (timer_on) timer_start( 2 );
+    if (timer_on) timer_start( 2, 1);
     full_verify();
-    if (timer_on) timer_stop( 2 );
+    if (timer_on) timer_stop( 2, 1);
 
-    if (timer_on) timer_stop( 3 );
+    if (timer_on) timer_stop( 3, 1);
 
     free_key_buff();
 

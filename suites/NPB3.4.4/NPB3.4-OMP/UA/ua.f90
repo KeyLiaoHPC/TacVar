@@ -118,7 +118,7 @@
       do i = 1, t_last
          call timer_clear(i)
       end do
-      if (timeron) call timer_start(t_init)
+      if (timeron) call timer_start(t_init, 1)
 
       call alloc_space
 
@@ -145,7 +145,7 @@
       call mortar
       call prepwork
       call adaptation(ifmortar,0)
-      if (timeron) call timer_stop(t_init)
+      if (timeron) call timer_stop(t_init, 1)
 
       call timer_clear(1)
 
@@ -162,13 +162,13 @@
           do i = 1, t_last
              if (i.ne.t_init) call timer_clear(i)
           end do
-          call timer_start(1)          
+          call timer_start(1, 1)          
         endif
 
 !.......advance the convection step 
         call convect(ifmortar)
 
-        if (timeron) call timer_start(t_transf2)
+        if (timeron) call timer_start(t_transf2, 1)
 !.......prepare the intital guess for cg
         call transf(tmort,ta1)
 
@@ -196,7 +196,7 @@
 !$OMP END PARALLEL
 !.......get the residual on mortar 
         call transfb(rmor,trhs)
-        if (timeron) call timer_stop(t_transf2)
+        if (timeron) call timer_stop(t_transf2, 1)
 
 !.......apply boundary condition: zero out the residual on domain boundaries
 
@@ -217,9 +217,9 @@
         call diffusion(ifmortar)
 
 !.......add convection and diffusion
-        if (timeron) call timer_start(t_add2)
+        if (timeron) call timer_start(t_add2, 1)
         call add2(ta1,t,ntot)
-        if (timeron) call timer_stop(t_add2)
+        if (timeron) call timer_stop(t_add2, 1)
 
         
 !.......perform mesh adaptation
@@ -234,7 +234,7 @@
         nelt_tot = nelt_tot + dble(nelt)
       end do
 
-      call timer_stop(1)
+      call timer_stop(1, 1)
       tmax = timer_read(1)
        
       call verify(class, verified)

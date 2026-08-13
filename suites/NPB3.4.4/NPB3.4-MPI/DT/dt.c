@@ -423,7 +423,7 @@ Arr* RandomFeatures(char *bmname,int fdim,int id){
   int i=0;
   if(timer_on){
     timer_clear(id+1);
-    timer_start(id+1);
+    timer_start(id+1, 1);
   }
   for(i=0;i<len;i+=fdim){
     seedx=(seedx*nxg)%nx;
@@ -436,7 +436,7 @@ Arr* RandomFeatures(char *bmname,int fdim,int id){
     feat->val[i+3]=seedf;
   }
   if(timer_on){
-    timer_stop(id+1);
+    timer_stop(id+1, 1);
     fprintf(stderr,"** RandomFeatures time in node %d = %f\n",id,timer_read(id+1));
   }
   return feat;   
@@ -471,7 +471,7 @@ Arr* WindowFilter(Arr *a, Arr* b,int w){
   w+=1;
   if(timer_on){
     timer_clear(w);
-    timer_start(w);
+    timer_start(w, 1);
   }
   if(a->len<b->len) Resample(a,b->len);
   if(a->len>b->len) Resample(b,a->len);
@@ -517,7 +517,7 @@ Arr* WindowFilter(Arr *a, Arr* b,int w){
     }	   
   }
   if(timer_on){
-    timer_stop(w);
+    timer_stop(w, 1);
     fprintf(stderr,"** WindowFilter time in node %d = %f\n",(w-1),timer_read(w));
   }
   return a;
@@ -577,12 +577,12 @@ double Reduce(Arr *a,int w){
   double retv=0.0;
   if(timer_on){
     timer_clear(w);
-    timer_start(w);
+    timer_start(w, 2);
   }
   retv=(int)(w*CheckVal(a));/* The casting needed for node  
                                and array dependent verifcation */
   if(timer_on){
-    timer_stop(w);
+    timer_stop(w, 2);
     fprintf(stderr,"** Reduce time in node %d = %f\n",(w-1),timer_read(w));
   }
   return retv;
@@ -714,7 +714,7 @@ int main(int argc,char **argv ){
       printf( "\n\n NAS Parallel Benchmarks 3.4 -- DT Benchmark\n\n" );
       graphShow(dg,0);
       timer_clear(0);
-      timer_start(0);
+      timer_start(0, 1);
     }
     verified=ProcessNodes(dg,my_rank);
     
@@ -722,7 +722,7 @@ int main(int argc,char **argv ){
     bytes_sent=featnum*dg->numArcs;
     bytes_sent/=1048576;
     if(my_rank==0){
-      timer_stop(0);
+      timer_stop(0, 1);
       tot_time=timer_read(0);
       c_print_results( dg->name,
         	       CLASS,

@@ -82,7 +82,7 @@
          t_names(t_conj_grad) = 'conjgd'
       endif
 
-      call timer_start( T_init )
+      call timer_start( T_init, 1)
 
       firstrow = 1
       lastrow  = na
@@ -270,12 +270,12 @@
 
       zeta  = 0.0d0
 
-      call timer_stop( T_init )
+      call timer_stop( T_init, 1)
 
       write (*, 2000) timer_read(T_init)
  2000 format(' Initialization time = ',f15.3,' seconds')
 
-      call timer_start( T_bench )
+      call timer_start( T_bench, 1)
 
 !---------------------------------------------------------------------
 !---->
@@ -287,9 +287,9 @@
 !---------------------------------------------------------------------
 !  The call to the conjugate gradient routine:
 !---------------------------------------------------------------------
-         if ( timeron ) call timer_start( T_conj_grad )
+         if ( timeron ) call timer_start( T_conj_grad, 1)
          call conj_grad ( rnorm )
-         if ( timeron ) call timer_stop( T_conj_grad )
+         if ( timeron ) call timer_stop( T_conj_grad, 1)
 
 
 !---------------------------------------------------------------------
@@ -336,7 +336,7 @@
 
       enddo                              ! end of main iter inv pow meth
 
-      call timer_stop( T_bench )
+      call timer_stop( T_bench, 1)
 
 !---------------------------------------------------------------------
 !  End of timed section

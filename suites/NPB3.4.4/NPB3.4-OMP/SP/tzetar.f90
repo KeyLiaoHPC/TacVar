@@ -19,7 +19,7 @@
      &                   r4, r5, btuz, ac2u, uzik1
 
 
-       if (timeron) call timer_start(t_tzetar)
+       if (timeron) call timer_start(t_tzetar, 1)
 !$omp parallel do default(shared)  &
 !$omp& private(i,j,k,t1,t2,t3,ac,xvel,yvel,zvel,r1,r2,r3,  &
 !$omp&              r4,r5,btuz,ac2u,uzik1)  &
@@ -58,7 +58,7 @@
              end do
           end do
        end do
-       if (timeron) call timer_stop(t_tzetar)
+       if (timeron) call timer_stop(t_tzetar, 1)
 
        return
        end

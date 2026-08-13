@@ -204,7 +204,7 @@
        end do
        call mpi_barrier(comm_setup, error)
 
-       call timer_start(1)
+       call timer_start(1, 1)
 
        do  step = 1, niter
 
@@ -226,19 +226,19 @@
                   if (step .eq. niter .and. rd_interval .gt. 1) then
                       rd_interval = 1
                   endif
-                  call timer_start(2)
+                  call timer_start(2, 1)
                   call output_timestep
-                  call timer_stop(2)
+                  call timer_stop(2, 1)
                   idump = idump + 1
               endif
           endif
        end do
 
-       call timer_start(2)
+       call timer_start(2, 2)
        call btio_cleanup
-       call timer_stop(2)
+       call timer_stop(2, 2)
 
-       call timer_stop(1)
+       call timer_stop(1, 1)
        t = timer_read(1)
        t1(1) = timer_read(t_enorm)
 

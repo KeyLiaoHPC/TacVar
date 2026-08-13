@@ -19,7 +19,7 @@
      &                  r4, r5, ac2inv
 
 
-       if (timeron) call timer_start(t_txinvr)
+       if (timeron) call timer_start(t_txinvr, 1)
 !$omp parallel do default(shared)  &
 !$omp& private(i,j,k,t1,t2,t3,ac,ru1,uu,vv,ww,r1,r2,r3,r4,r5,ac2inv)  &
 !$omp&  collapse(2)
@@ -54,7 +54,7 @@
              end do
           end do
        end do
-       if (timeron) call timer_stop(t_txinvr)
+       if (timeron) call timer_stop(t_txinvr, 1)
 
        return
        end

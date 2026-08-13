@@ -31,7 +31,7 @@
 !---------------------------------------------------------------------
 !---------------------------------------------------------------------
 
-      if (timeron) call timer_start(t_xsolve)
+      if (timeron) call timer_start(t_xsolve, 1)
 
 !---------------------------------------------------------------------
 !---------------------------------------------------------------------
@@ -54,7 +54,7 @@
       do k = 1, grid_points(3)-2
          do jj = 1, grid_points(2)-2, bsize
 
-            if (timeron) call timer_start(t_rdis1)
+            if (timeron) call timer_start(t_rdis1, 1)
             do i=0,isize
             do jb = 1, bsize
                j = min(jj+jb-1, grid_points(2)-2)
@@ -65,7 +65,7 @@
                rhsx(jb,5,i) = rhs(5,i,j,k)
             end do
             end do
-            if (timeron) call timer_stop(t_rdis1)
+            if (timeron) call timer_stop(t_rdis1, 1)
 
             call lhsinit(0)
 
@@ -355,7 +355,7 @@
 !     outer most do loops - sweeping in i direction
 !---------------------------------------------------------------------
 
-            if (timeron) call timer_start(t_solsub)
+            if (timeron) call timer_start(t_solsub, 1)
 !---------------------------------------------------------------------
 !     multiply c(0,j,k) by b_inverse and copy back to c
 !     multiply rhs(0) by b_inverse(0) and copy to rhs
@@ -414,7 +414,7 @@
                call binvrhs( lhsb(1,1,1,2),  &
      &                       rhsx(1,1,isize) )
             endif
-            if (timeron) call timer_stop(t_solsub)
+            if (timeron) call timer_stop(t_solsub, 1)
 
             enddo
 
@@ -440,7 +440,7 @@
             enddo
             enddo
 
-            if (timeron) call timer_start(t_rdis1)
+            if (timeron) call timer_start(t_rdis1, 2)
             do jb = 1, bsize
                j = jj+jb-1
                if (j .lt. grid_points(2)-1) then
@@ -453,12 +453,12 @@
                end do
                endif
             end do
-            if (timeron) call timer_stop(t_rdis1)
+            if (timeron) call timer_stop(t_rdis1, 2)
 
          enddo
       enddo
 !$omp end parallel
-      if (timeron) call timer_stop(t_xsolve)
+      if (timeron) call timer_stop(t_xsolve, 1)
 
       return
       end

@@ -36,7 +36,7 @@
 ! and after that reversing the direction for the backsubstitution.
 !---------------------------------------------------------------------
 
-       if (timeron) call timer_start(t_xsolve)
+       if (timeron) call timer_start(t_xsolve, 1)
 !---------------------------------------------------------------------
 !                          FORWARD ELIMINATION  
 !---------------------------------------------------------------------
@@ -61,12 +61,12 @@
 !            receive data from predecessor containing the right hand
 !            sides and the upper diagonal elements of the previous two rows
 !---------------------------------------------------------------------
-             if (timeron) call timer_start(t_xcomm)
+             if (timeron) call timer_start(t_xcomm, 1)
              call mpi_irecv(in_buffer, 22*buffer_size,  &
      &                      dp_type, predecessor(1),  &
      &                      DEFAULT_TAG,  comm_solve,  &
      &                      mrequests(1), error)
-             if (timeron) call timer_stop(t_xcomm)
+             if (timeron) call timer_stop(t_xcomm, 1)
 
 
 !---------------------------------------------------------------------
@@ -81,9 +81,9 @@
 !            from the previous stage. They always come in pairs. 
 !---------------------------------------------------------------------
 
-             if (timeron) call timer_start(t_xcomm)
+             if (timeron) call timer_start(t_xcomm, 2)
              call mpi_waitall(2, mrequests, mstatuses, error)
-             if (timeron) call timer_stop(t_xcomm)
+             if (timeron) call timer_stop(t_xcomm, 2)
 
 !---------------------------------------------------------------------
 !            unpack the buffer                                 
@@ -337,12 +337,12 @@
 ! send data to next phase
 ! can't receive data yet because buffer size will be wrong 
 !---------------------------------------------------------------------
-             if (timeron) call timer_start(t_xcomm)
+             if (timeron) call timer_start(t_xcomm, 3)
              call mpi_isend(out_buffer, 22*buffer_size,  &
      &                     dp_type, successor(1),  &
      &                     DEFAULT_TAG, comm_solve,  &
      &                     mrequests(2), error)
-             if (timeron) call timer_stop(t_xcomm)
+             if (timeron) call timer_stop(t_xcomm, 3)
 
           endif
        end do
@@ -375,12 +375,12 @@
 !            wait for a message to be received, containing the 
 !            solution of the previous two stations     
 !---------------------------------------------------------------------
-             if (timeron) call timer_start(t_xcomm)
+             if (timeron) call timer_start(t_xcomm, 4)
              call mpi_irecv(in_buffer, 10*buffer_size,  &
      &                      dp_type, successor(1),  &
      &                      DEFAULT_TAG, comm_solve,  &
      &                      mrequests(1), error)
-             if (timeron) call timer_stop(t_xcomm)
+             if (timeron) call timer_stop(t_xcomm, 4)
 
 
 !---------------------------------------------------------------------
@@ -394,9 +394,9 @@
 !---------------------------------------------------------------------
 !            wait for pending communication to complete
 !---------------------------------------------------------------------
-             if (timeron) call timer_start(t_xcomm)
+             if (timeron) call timer_start(t_xcomm, 5)
              call mpi_waitall(2, mrequests, mstatuses, error)
-             if (timeron) call timer_stop(t_xcomm)
+             if (timeron) call timer_stop(t_xcomm, 5)
 
 !---------------------------------------------------------------------
 !            unpack the buffer for the first three factors         
@@ -531,12 +531,12 @@
 !---------------------------------------------------------------------
 !            pack and send the buffer
 !---------------------------------------------------------------------
-             if (timeron) call timer_start(t_xcomm)
+             if (timeron) call timer_start(t_xcomm, 6)
              call mpi_isend(out_buffer, 10*buffer_size,  &
      &                     dp_type, predecessor(1),  &
      &                     DEFAULT_TAG, comm_solve,  &
      &                     mrequests(2), error)
-             if (timeron) call timer_stop(t_xcomm)
+             if (timeron) call timer_stop(t_xcomm, 6)
 
           endif
 
@@ -547,7 +547,7 @@
 
        end do
 
-       if (timeron) call timer_stop(t_xsolve)
+       if (timeron) call timer_stop(t_xsolve, 1)
 
        return
        end

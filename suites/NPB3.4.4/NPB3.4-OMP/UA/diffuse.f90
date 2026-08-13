@@ -11,7 +11,7 @@
       logical ifmortar
       integer iter,ie, im,iside,i,j,k
 
-      if (timeron) call timer_start(t_diffusion)
+      if (timeron) call timer_start(t_diffusion, 1)
 !.....set up diagonal preconditioner
       if (ifmortar) then
         call setuppc
@@ -100,9 +100,9 @@
  
 !.......compute matrix vector product: (theta pm) in the specification
 
-        if (timeron) call timer_start(t_transf)
+        if (timeron) call timer_start(t_transf, 1)
         call transf(pmorx,pdiff) 
-        if (timeron) call timer_stop(t_transf)
+        if (timeron) call timer_stop(t_transf, 1)
 
 !.......compute pdiffp which is (A theta pm) in the specification
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(ie) 
@@ -113,9 +113,9 @@
 
 !.......compute ppmor which will be used to compute (thetaT A theta pm) 
 !       in the specification
-        if (timeron) call timer_start(t_transfb)
+        if (timeron) call timer_start(t_transfb, 1)
         call transfb(ppmor,pdiffp) 
-        if (timeron) call timer_stop(t_transfb)
+        if (timeron) call timer_stop(t_transfb, 1)
  
 !.......apply boundary condition
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(ie,iside)
@@ -162,10 +162,10 @@
  
       end do
 
-      if (timeron) call timer_start(t_transf)
+      if (timeron) call timer_start(t_transf, 2)
       call transf(umor,t)  
-      if (timeron) call timer_stop(t_transf)
-      if (timeron) call timer_stop(t_diffusion)
+      if (timeron) call timer_stop(t_transf, 2)
+      if (timeron) call timer_stop(t_diffusion, 1)
 
       return
       end

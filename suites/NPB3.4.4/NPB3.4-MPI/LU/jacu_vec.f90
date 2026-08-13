@@ -32,7 +32,7 @@
       double precision  tmp1, tmp2, tmp3
 
 
-      if (timeron) call timer_start(t_jacu)
+      if (timeron) call timer_start(t_jacu, 1)
 
       r43 = ( 4.0d+00 / 3.0d+00 )
       c1345 = c1 * c3 * c4 * c5
@@ -382,7 +382,7 @@
             end do
          end do
 
-      if (timeron) call timer_stop(t_jacu)
+      if (timeron) call timer_stop(t_jacu, 1)
 
       return
       end

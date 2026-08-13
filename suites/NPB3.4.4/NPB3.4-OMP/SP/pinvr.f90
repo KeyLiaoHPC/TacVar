@@ -17,7 +17,7 @@
        integer i, j, k
        double precision r1, r2, r3, r4, r5, t1, t2
 
-       if (timeron) call timer_start(t_pinvr)
+       if (timeron) call timer_start(t_pinvr, 1)
 !$omp parallel do default(shared) private(i,j,k,r1,r2,r3,r4,r5,t1,t2)  &
 !$omp&  collapse(2)
        do   k = 1, nz2
@@ -41,7 +41,7 @@
              end do
           end do
        end do
-       if (timeron) call timer_stop(t_pinvr)
+       if (timeron) call timer_stop(t_pinvr, 1)
 
        return
        end

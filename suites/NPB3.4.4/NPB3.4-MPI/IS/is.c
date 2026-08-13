@@ -185,11 +185,11 @@ int size_of_buffers;
 #define  TIMING_ENABLED
 #ifdef NO_MTIMERS
 #undef TIMINIG_ENABLED
-#define TIMER_START( x )
-#define TIMER_STOP( x )
+#define TIMER_START( x, loc )
+#define TIMER_STOP( x, loc )
 #else
-#define TIMER_START( x ) if (timeron) timer_start( x )
-#define TIMER_STOP( x ) if (timeron) timer_stop( x )
+#define TIMER_START( x, loc ) if (timeron) timer_start( x, loc )
+#define TIMER_STOP( x, loc ) if (timeron) timer_stop( x, loc )
 #define T_TOTAL  0
 #define T_RANK   1
 #define T_RCOMM  2
@@ -577,7 +577,7 @@ void full_verify( void )
     INT_TYPE    k, last_local_key;
 
     
-    TIMER_START( T_VERIFY );
+    TIMER_START( T_VERIFY, 1);
 
 /*  Now, finally, sort the keys:  */
     for( i=0; i<total_local_keys; i++ )
@@ -626,7 +626,7 @@ void full_verify( void )
     else
         passed_verification++;
            
-    TIMER_STOP( T_VERIFY );
+    TIMER_STOP( T_VERIFY, 1);
 
 }
 
@@ -652,7 +652,7 @@ void rank( int iteration )
 
 
 
-    TIMER_START( T_RANK );
+    TIMER_START( T_RANK, 1);
 
 /*  Iteration alteration of keys */  
     if(my_rank == 0 )                    
@@ -698,8 +698,8 @@ void rank( int iteration )
         key_buff1[bucket_ptrs[key >> shift]++] = key;
     }
 
-    TIMER_STOP( T_RANK );
-    TIMER_START( T_RCOMM );
+    TIMER_STOP( T_RANK, 1);
+    TIMER_START( T_RCOMM, 1);
 
 /*  Get the bucket size totals for the entire problem. These 
     will be used to determine the redistribution of keys      */
@@ -710,8 +710,8 @@ void rank( int iteration )
                    MPI_SUM,
                    comm_work );
 
-    TIMER_STOP( T_RCOMM );
-    TIMER_START( T_RANK );
+    TIMER_STOP( T_RCOMM, 1);
+    TIMER_START( T_RANK, 2);
 
 /*  Determine Redistibution of keys: accumulate the bucket size totals 
     till this number surpasses NUM_KEYS (which the average number of keys
@@ -760,8 +760,8 @@ void rank( int iteration )
         j++;
     }
 
-    TIMER_STOP( T_RANK );
-    TIMER_START( T_RCOMM ); 
+    TIMER_STOP( T_RANK, 2);
+    TIMER_START( T_RCOMM, 2); 
 
 /*  This is the redistribution section:  first find out how many keys
     each processor will send to every other processor:                 */
@@ -790,8 +790,8 @@ void rank( int iteration )
                    MP_KEY_TYPE,
                    comm_work );
 
-    TIMER_STOP( T_RCOMM ); 
-    TIMER_START( T_RANK );
+    TIMER_STOP( T_RCOMM, 2); 
+    TIMER_START( T_RANK, 3);
 
 /*  The starting and ending bucket numbers on each processor are
     multiplied by the interval size of the buckets to obtain the 
@@ -921,7 +921,7 @@ void rank( int iteration )
     }
 
 
-    TIMER_STOP( T_RANK ); 
+    TIMER_STOP( T_RANK, 3); 
 
 
 /*  Make copies of rank info for use by full_verify: these variables
@@ -1098,7 +1098,7 @@ int main( int argc, char **argv )
 #endif
 
 /*  Start timer  */             
-    timer_start( 0 );
+    timer_start( 0, 1);
 
 
 /*  This is the main iteration */
@@ -1110,7 +1110,7 @@ int main( int argc, char **argv )
 
 
 /*  Stop timer, obtain time for processors */
-    timer_stop( 0 );
+    timer_stop( 0, 1);
 
     timecounter = timer_read( 0 );
 

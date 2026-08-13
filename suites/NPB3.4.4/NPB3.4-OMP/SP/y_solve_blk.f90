@@ -26,7 +26,7 @@
 !---------------------------------------------------------------------
 !---------------------------------------------------------------------
 
-       if (timeron) call timer_start(t_ysolve)
+       if (timeron) call timer_start(t_ysolve, 1)
 !$omp parallel default(shared) private(i,j,k,j1,j2,ii,ib,im,  &
 !$omp&    ru1,fac1,fac2)
 
@@ -353,7 +353,7 @@
        end do
 !$omp end do nowait
 !$omp end parallel
-       if (timeron) call timer_stop(t_ysolve)
+       if (timeron) call timer_stop(t_ysolve, 1)
 
 
        call pinvr
