@@ -62,8 +62,36 @@ ACADEMIC_RC = {
 FIG_W_IN, FIG_H_IN = 13.333, 7.5  # 16:9
 DPI = 300
 
-# CG region catalog (names_cg in common/tacvar_npb.c)
-REGION_NAMES = {1: "total", 2: "conjg", 3: "rcomm", 4: "ncomm"}
+# Region catalogs (names_* in common/tacvar_npb.c)
+REGION_NAMES = {
+    "is": {0: "total", 1: "rcomp", 2: "rcomm", 3: "verify"},
+    "cg": {1: "total", 2: "conjg", 3: "rcomm", 4: "ncomm"},
+    "mg": {
+        1: "total", 2: "init", 3: "psinv", 4: "resid",
+        5: "rprj3", 6: "interp", 7: "norm2u3", 8: "comm3", 9: "rcomm",
+    },
+    "ep": {1: "total", 2: "gpairs", 3: "randn", 4: "rcomm"},
+    "bt": {
+        1: "total", 2: "i/o", 3: "rhs", 4: "xsolve", 5: "ysolve",
+        6: "zsolve", 7: "bpack", 8: "exch", 9: "xcomm", 10: "ycomm",
+        11: "zcomm", 12: "enorm", 13: "iov",
+    },
+    "sp": {
+        1: "total", 2: "rhs", 3: "xsolve", 4: "ysolve", 5: "zsolve",
+        6: "bpack", 7: "exch", 8: "xcomm", 9: "ycomm", 10: "zcomm",
+    },
+    "lu": {
+        1: "total", 2: "rhs", 3: "blts", 4: "buts", 5: "jacld",
+        6: "jacu", 7: "exch", 8: "lcomm", 9: "ucomm", 10: "rcomm",
+    },
+    "ft": {
+        1: "total", 2: "setup", 3: "fft", 4: "evolve", 5: "checksum",
+        6: "fftlow", 7: "fftcopy", 8: "transpose",
+        9: "transxzloc", 10: "transxzglo", 11: "transxzfin",
+        12: "transxyloc", 13: "transxyglo", 14: "transxyfin",
+        15: "synch", 16: "init",
+    },
+}
 
 _MET_BLUE = "#1f77b4"
 _MET_GREY = "0.35"
@@ -196,10 +224,42 @@ def _new_figure() -> tuple[Figure, plt.Axes]:
     return fig, ax
 
 
+def resolve_filt_dir(root: Path, kernel: str, klass: str) -> Path:
+    """Find <root>/<kernel>.<class>_filt (case-insensitive kernel)."""
+    ku, cu = kernel.upper(), klass.upper()
+    for d in sorted(root.iterdir()):
+        if not d.is_dir():
+            continue
+        m = re.fullmatch(r"([A-Za-z0-9]+)\.([A-Za-z])_filt", d.name)
+        if m and m.group(1).upper() == ku and m.group(2).upper() == cu:
+            return d
+    raise ValueError(f"no FilT directory for {ku}.{cu} under {root}")
+
+
+def _iter_sites(
+    filt_root: Path, rid: int | None = None, lid: int | None = None
+) -> list[tuple[int, int, Path]]:
+    sites = []
+    for sd in filt_root.iterdir():
+        if not sd.is_dir():
+            continue
+        m = re.fullmatch(r"r(\d+)_l(\d+)", sd.name)
+        if not m:
+            continue
+        r, l = int(m.group(1)), int(m.group(2))
+        if rid is not None and r != rid:
+            continue
+        if lid is not None and l != lid:
+            continue
+        sites.append((r, l, sd))
+    return sorted(sites)
+
+
 def _site_title(kernel: str, klass: str, rid: int, loc: int, tag: str) -> str:
-    rname = REGION_NAMES.get(rid, f"region {rid}")
+    rname = REGION_NAMES.get(kernel.lower(), {}).get(rid, f"region {rid}")
     return (
-        f"{kernel}.{klass} · {rname} (region {rid}, loc {loc}) — {tag}"
+        f"{kernel.upper()}.{klass.upper()} · {rname} "
+        f"(region {rid}, loc {loc}) — {tag}"
     )
 
 
@@ -209,15 +269,17 @@ def draw_print_tr_vs_met(
     klass: str = "C",
     out_dir: str | Path | None = None,
     *,
+    rid: int | None = None,
+    lid: int | None = None,
     formats: tuple[str, ...] = ("pdf", "png"),
     ref_note: str = "",
 ) -> list[Figure]:
-    """Per-site panel: raw met vs filtered tr, PDF (left) and CDF (right).
+    """Per-site panel: raw met vs filtered tr, histogram (left) and CDF (right).
 
     Saves data_<stamp>/images/{K}.{C}_tr_vs_met_r{rid}_l{loc}.{fmt}.
     """
     root = Path(data_root)
-    filt_root = root / f"{kernel}.{klass}_filt"
+    filt_root = resolve_filt_dir(root, kernel, klass)
     if out_dir is None:
         out_dir = root / "images"
     out_dir = Path(out_dir)
@@ -225,21 +287,13 @@ def draw_print_tr_vs_met(
 
     med_table = load_median_table(root)
     figures: list[Figure] = []
+    kernel_u, klass_u = kernel.upper(), klass.upper()
 
-    sites = sorted(
-        (
-            Path(sd)
-            for sd in filt_root.iterdir()
-            if sd.is_dir() and re.fullmatch(r"r\d+_l\d+", sd.name)
-        ),
-        key=lambda p: tuple(int(x) for x in re.fullmatch(r"r(\d+)_l(\d+)", p.name).groups()),
-    )
+    sites = _iter_sites(filt_root, rid, lid)
     if not sites:
-        raise ValueError(f"no FilT sites under {filt_root}")
+        raise ValueError(f"no FilT sites under {filt_root} (rid={rid} lid={lid})")
 
-    for site in sites:
-        m = re.fullmatch(r"r(\d+)_l(\d+)", site.name)
-        rid, loc = int(m.group(1)), int(m.group(2))
+    for rid, loc, site in sites:
         met_path = site / "met.csv"
         tr_path = site / "tr_hist.csv"
         sim_path = site / "sim_cdf.csv"
@@ -299,7 +353,7 @@ def draw_print_tr_vs_met(
         ax1.set_xlabel(f"time ({unit})")
         ax1.set_ylabel("probability density")
         ax1.legend(loc="upper right", frameon=True, framealpha=0.9)
-        ax1.set_title("PDF: raw measurement vs filtered real time")
+        ax1.set_title("Histogram: before (met) vs after (tr)")
 
         # ---- right: CDF
         met_sorted = np.sort(met / scale)
@@ -323,7 +377,7 @@ def draw_print_tr_vs_met(
         ax2.set_ylabel("cumulative probability")
         ax2.set_ylim(-0.02, 1.05)
         ax2.legend(loc="lower right", frameon=True, framealpha=0.9)
-        ax2.set_title("CDF: raw measurement vs filtered real time")
+        ax2.set_title("CDF: before (met) vs after (tr)")
 
         fig.suptitle(
             _site_title(kernel, klass, rid, loc, "in-situ timing-fluctuation filter"),
@@ -341,7 +395,7 @@ def draw_print_tr_vs_met(
         fig.text(0.5, 0.005, axis_note, ha="center", fontsize=11, color="0.15")
         fig.tight_layout(rect=(0, 0.025, 1, 0.96))
 
-        base = out_dir / f"{kernel}.{klass}_tr_vs_met_r{rid}_l{loc}"
+        base = out_dir / f"{kernel_u}.{klass_u}_tr_vs_met_r{rid}_l{loc}"
         for fmt in formats:
             fig.savefig(f"{base}.{fmt}", dpi=DPI, bbox_inches="tight")
         figures.append(fig)
@@ -356,40 +410,43 @@ def draw_print_tf_cdf(
     klass: str = "C",
     out_dir: str | Path | None = None,
     *,
+    rid: int | None = None,
+    lid: int | None = None,
     formats: tuple[str, ...] = ("pdf", "png"),
     ref_note: str = "",
 ) -> list[Figure]:
     """Per-site CDF of the subtracted timing fluctuation tf.
 
+    Prefers tf_cdf.csv; falls back to the empirical CDF of tf.csv.
     Saves data_<stamp>/images/{K}.{C}_tf_cdf_r{rid}_l{loc}.{fmt}.
     """
     root = Path(data_root)
-    filt_root = root / f"{kernel}.{klass}_filt"
+    filt_root = resolve_filt_dir(root, kernel, klass)
     if out_dir is None:
         out_dir = root / "images"
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     figures: list[Figure] = []
-    sites = sorted(
-        (
-            Path(sd)
-            for sd in filt_root.iterdir()
-            if sd.is_dir() and re.fullmatch(r"r\d+_l\d+", sd.name)
-        ),
-        key=lambda p: tuple(int(x) for x in re.fullmatch(r"r(\d+)_l(\d+)", p.name).groups()),
-    )
-    for site in sites:
-        m = re.fullmatch(r"r(\d+)_l(\d+)", site.name)
-        rid, loc = int(m.group(1)), int(m.group(2))
+    kernel_u, klass_u = kernel.upper(), klass.upper()
+    for rid, loc, site in _iter_sites(filt_root, rid, lid):
         cdf_path = site / "tf_cdf.csv"
-        if not cdf_path.is_file():
+        tf_path = site / "tf.csv"
+        if cdf_path.is_file():
+            qs, vs = load_tf_cdf(cdf_path)
+            qs = qs / 100.0
+        elif tf_path.is_file():
+            tf = _read_col(tf_path)
+            if tf.size < 2:
+                continue
+            vs = np.sort(tf)
+            qs = np.arange(1, vs.size + 1, dtype=np.float64) / vs.size
+        else:
             continue
-        qs, vs = load_tf_cdf(cdf_path)
         scale, unit = _auto_unit(vs)
 
         fig, ax = _new_figure()
-        ax.plot(vs / scale, qs / 100.0, color=_MET_BLUE, linewidth=2.0)
+        ax.plot(vs / scale, qs, color=_MET_BLUE, linewidth=2.0)
         ax.axhline(0.5, color="0.5", linestyle=":", linewidth=0.9)
         ax.axvline(0.0, color="0.2", linestyle="--", linewidth=0.9)
         ax.set_xlabel(f"subtracted timing fluctuation tf ({unit})")
@@ -404,7 +461,7 @@ def draw_print_tf_cdf(
         fig.text(0.5, 0.01, note, ha="center", fontsize=11, color="0.15")
         fig.tight_layout(rect=(0, 0.03, 1, 0.97))
 
-        base = out_dir / f"{kernel}.{klass}_tf_cdf_r{rid}_l{loc}"
+        base = out_dir / f"{kernel_u}.{klass_u}_tf_cdf_r{rid}_l{loc}"
         for fmt in formats:
             fig.savefig(f"{base}.{fmt}", dpi=DPI, bbox_inches="tight")
         figures.append(fig)
@@ -419,6 +476,8 @@ def draw_print_gauge_overhead(
     klass: str = "C",
     out_dir: str | Path | None = None,
     *,
+    rid: int | None = None,
+    lid: int | None = None,
     formats: tuple[str, ...] = ("pdf", "png"),
 ) -> list[Figure]:
     """One bar chart: gauge overhead tmet = ngauge·nspg vs median(tr) per site.
@@ -426,7 +485,7 @@ def draw_print_gauge_overhead(
     Saves data_<stamp>/images/{K}.{C}_gauge_overhead.{fmt}.
     """
     root = Path(data_root)
-    filt_root = root / f"{kernel}.{klass}_filt"
+    filt_root = resolve_filt_dir(root, kernel, klass)
     if out_dir is None:
         out_dir = root / "images"
     out_dir = Path(out_dir)
@@ -434,18 +493,9 @@ def draw_print_gauge_overhead(
 
     nspg = load_nspg(root)
     med_table = load_median_table(root)
-    sites = sorted(
-        (
-            Path(sd)
-            for sd in filt_root.iterdir()
-            if sd.is_dir() and re.fullmatch(r"r\d+_l\d+", sd.name)
-        ),
-        key=lambda p: tuple(int(x) for x in re.fullmatch(r"r(\d+)_l(\d+)", p.name).groups()),
-    )
+    kernel_u, klass_u = kernel.upper(), klass.upper()
     rows = []
-    for site in sites:
-        m = re.fullmatch(r"r(\d+)_l(\d+)", site.name)
-        rid, loc = int(m.group(1)), int(m.group(2))
+    for rid, loc, site in _iter_sites(filt_root, rid, lid):
         tr_path = site / "tr_hist.csv"
         if not tr_path.is_file():
             continue
@@ -466,11 +516,10 @@ def draw_print_gauge_overhead(
 
     labels = [f"r{r}_l{l}" for r, l, *_ in rows]
     fracs = np.asarray([x[4] for x in rows])
-    ngs = [x[5] for x in rows]
 
     fig, ax = _new_figure()
     x = np.arange(len(rows))
-    bars = ax.bar(x, fracs, color=_TR_COLOR, alpha=0.7, edgecolor="black", linewidth=0.6)
+    ax.bar(x, fracs, color=_TR_COLOR, alpha=0.7, edgecolor="black", linewidth=0.6)
     ax.axhline(1.0, color="0.4", linestyle="--", linewidth=0.9)
     for xi, (_, _, _, _, f, ng) in zip(x, rows):
         ax.text(xi, f + 0.04 * max(fracs.max(), 1.0), f"{f:.2f}%", ha="center", fontsize=11)
@@ -478,13 +527,13 @@ def draw_print_gauge_overhead(
     ax.set_xticklabels(labels, rotation=30, ha="right")
     ax.set_ylabel("gauge overhead tmet / median(tr) (%)")
     ax.set_title(
-        f"{kernel}.{klass} · in-situ gauge overhead per site "
+        f"{kernel_u}.{klass_u} · in-situ gauge overhead per site "
         f"(nspg = {nspg:.4f} ns/step)"
     )
     ax.set_ylim(0, max(fracs.max() * 1.25, 2.0))
     fig.tight_layout()
 
-    base = out_dir / f"{kernel}.{klass}_gauge_overhead"
+    base = out_dir / f"{kernel_u}.{klass_u}_gauge_overhead"
     for fmt in formats:
         fig.savefig(f"{base}.{fmt}", dpi=DPI, bbox_inches="tight")
     print(f"saved {base}.{'/'.join(formats)}  ({len(rows)} sites)")
@@ -501,6 +550,8 @@ def main() -> None:
     ap.add_argument("data_root")
     ap.add_argument("--kernel", default="cg")
     ap.add_argument("--class", dest="klass", default="C")
+    ap.add_argument("--rid", "--region-id", type=int, default=None)
+    ap.add_argument("--lid", "--loc-id", type=int, default=None)
     ap.add_argument("--out-dir", default="")
     ap.add_argument("--formats", default="pdf,png")
     ap.add_argument("--note", default="")
@@ -509,14 +560,23 @@ def main() -> None:
     out = Path(args.out_dir) if args.out_dir else Path(args.data_root) / "images"
     fmts = tuple(f.strip() for f in args.formats.split(",") if f.strip())
     only = set(f.strip() for f in args.only.split(",") if f.strip()) or None
+    kw = dict(rid=args.rid, lid=args.lid, formats=fmts)
 
     with plt.rc_context(ACADEMIC_RC):
         if only is None or "tr_vs_met" in only:
-            draw_print_tr_vs_met(args.data_root, args.kernel, args.klass, out, formats=fmts, ref_note=args.note)
+            draw_print_tr_vs_met(
+                args.data_root, args.kernel, args.klass, out,
+                ref_note=args.note, **kw,
+            )
         if only is None or "tf_cdf" in only:
-            draw_print_tf_cdf(args.data_root, args.kernel, args.klass, out, formats=fmts, ref_note=args.note)
+            draw_print_tf_cdf(
+                args.data_root, args.kernel, args.klass, out,
+                ref_note=args.note, **kw,
+            )
         if only is None or "overhead" in only:
-            draw_print_gauge_overhead(args.data_root, args.kernel, args.klass, out, formats=fmts)
+            draw_print_gauge_overhead(
+                args.data_root, args.kernel, args.klass, out, **kw,
+            )
     print(f"figures written to {out.resolve()}")
 
 

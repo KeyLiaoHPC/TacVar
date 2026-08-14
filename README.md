@@ -123,9 +123,11 @@ TACVAR_COUNTER_BACKEND=none
 TACVAR_COUNTER_COUNT=0           # must match number of names
 TACVAR_COUNTER_NAMES=            # comma-separated, e.g. cpu-cycles,instructions
 TACVAR_OUTPUT_ROOT=.             # CSV root relative to benchmark cwd
-TACVAR_TF_SAMPLING_MODE=OFF      # reserved; unused by NPB-MPI timers
-TACVAR_TF_DATA_ROOT=             # reserved
-TACVAR_TF_NSPG=0                 # reserved; nspg comes from test_nspg.x / nspg.txt
+TACVAR_TF_SAMPLING_MODE=OFF      # OFF: normal .x; ON: build _tfs.x and _tfe.x
+TACVAR_TF_DATA_ROOT=             # empty → timestamped data_*; TF runs reuse this tree
+TACVAR_TF_REG_ID=0               # active region_id when MODE=ON
+TACVAR_TF_LOC_ID=1               # active loc_id when MODE=ON
+TACVAR_TF_NSPG=0                 # unused; nspg comes from test_nspg.x / nspg.txt
 ```
 
 Change conf → **rebuild** the suite. Runtime does not switch backends. Invalid consumer/arch combinations are rejected by `src/measure/tools/gen_config.py`.
@@ -282,15 +284,23 @@ cd suites/lmbench
 taskset -c 0 ./bin/$(cd src && ../scripts/os)/lat_syscall null
 ```
 
-### 3.9 NPB-MPI nspg and FilT
+### 3.9 NPB-MPI in-situ timing-fluctuation sampling
 
-TacVar timers record kernel intervals under `data_<stamp>/<bench>.<CLASS>/`. Optional helpers (not in-situ TF sampling):
+Normal timing writes kernel intervals under `data_<stamp>/<bench>.<CLASS>/`. Front (`tfs`) and rear (`tfe`) in-situ sampling then measure a subtraction-gauge filler at one `(region_id, loc_id)` so FilT can subtract timing fluctuation from those intervals.
 
-- `make nspg` → `bin/test_nspg.x` (fit ns per subtraction-gauge step).
-- `make filt` → `bin/filt.x` (FilT from `common/filt.c`).
-- Wrapper: `scripts/run_npb_measure.sh` (measure + nspg + `get_median.py`).
+**Workflow (CG class C as the example):**
 
-`TACVAR_TF_*` keys in `tacvar.conf` are reserved and unused by the NPB timer path.
+1. Environment: fixed frequency / no turbo, load `ph_enable_pmu` if using `asm` counters, set `perf_event_paranoid` / `rdpmc` as needed. On KunPeng set `TACVAR_NSTP=10` (ns per CNTVCT tick). Source `suites/NPB3.4.4/NPB3.4-MPI/scripts/setup_env.sh`.
+2. `make nspg` and run `bin/test_nspg.x` → `nspg.txt` (ns per subtraction-gauge step).
+3. `TACVAR_TF_SAMPLING_MODE=OFF`. Build and run as usual (`NPB_TIMER_FLAG=1`). If `TACVAR_TF_DATA_ROOT` is empty, CSV goes under `./data_<YYYYMMDDTHHmmss>`. Copy `nspg.txt` into that directory (the measure wrapper does this).
+4. `python3 scripts/get_met_stat.py data_<stamp>` writes `met_stat.csv` and `median.csv`. `ngauge = round(median / nspg)` per site.
+5. Set `TACVAR_TF_REG_ID`, `TACVAR_TF_LOC_ID`, `TACVAR_TF_DATA_ROOT` to that directory, `TACVAR_TF_SAMPLING_MODE=ON`, then `make tacvar_clean && make CG CLASS=C`. This produces `bin/cg.C_tfs.x` and `bin/cg.C_tfe.x`.
+6. Run the same `mpirun` line on those two binaries. CSV lands in `data_<stamp>/cg.C_tfs/` and `cg.C_tfe/`. The original `timer_start` (front) or `timer_stop` (rear) is unchanged; the other endpoint is always unfenced `rdtscp` (x86) or `cntvct_el0` (Arm). Gauge `elapsed_ns` is that interval converted to ns. Other `(region_id, loc_id)` rows are not written.
+7. `make filt` then `python3 scripts/run_filt.py data_<stamp>` (optional `--rid 9 --lid 2` to keep one site). For each site, `tf = (tfs − nspg·ngauge) + (tfe′ − nspg·ngauge)` (independent shuffle). FilT Semi-Newton writes `cg.C_filt/r<rid>_l<loc>/{met.csv,tf.csv,tr_hist.csv,sim_cdf.csv,er.out,ep.out}`.
+
+**Tick-to-ns:** same formula as the tick timers (`ticks * g_tacvar_ns_per_tsc` or `ticks * TACVAR_NSTP`). If `TACVAR_TIMER` is already TSC/CNTVCT, elapsed is a same-counter tick delta. If it is already nanoseconds (`papi_get_real_nsec`, `clock_gettime`, `mpi_wtime`), a **per-core** offset `orig_ns − TICK_TO_NS(tick)` is taken on first visit to that CPU, outside the gauge window. Bind ranks (`mpirun --bind-to core`). Samples with `migrated=1` are dropped in `run_filt.py`. Arm TF builds require `TACVAR_NSTP > 0`.
+
+Helpers: `make nspg`, `make filt`, `scripts/run_npb_measure.sh` (measure + nspg + `get_met_stat.py`), `scripts/test_tf_insitu.sh` (build smoke for `_tfs`/`_tfe`).
 
 ### 3.10 Troubleshooting
 

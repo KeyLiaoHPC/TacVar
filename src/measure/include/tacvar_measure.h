@@ -74,6 +74,24 @@ const char *tacvar_data_dir(void);
 /** @brief True if tacvar_init completed for the current PID. */
 int tacvar_is_ready(void);
 
+/** @brief Load ngauge / TSC calibrate for in-situ TF (no-op if sampling off). */
+int tacvar_tf_prepare(void);
+
+/** @brief Subtraction-gauge loop count (round(median/nspg)) for the active site. */
+uint64_t tacvar_tf_ngauge(void);
+
+/**
+ * @brief Fill per-core orig-vs-tick offset before the two gauge stamps.
+ * No-op when the original timer is already TSC/CNTVCT.
+ */
+void tacvar_tf_ensure_offset(int cpu);
+
+/**
+ * @brief Gauge duration in ns from original-timer raw and asm-tick raw.
+ * @param orig_is_start 1 for front sampling (orig then tick), 0 for rear.
+ */
+int64_t tacvar_tf_elapsed_ns(int orig_is_start, uint64_t t_orig, uint64_t t_tick);
+
 #ifdef __cplusplus
 }
 #endif

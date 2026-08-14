@@ -103,5 +103,42 @@ int main(void) {
 EOF
 gcc -O2 -o "$TMP/csv_schema" "$TMP/csv_schema.c" && check "csv schema fields" "$TMP/csv_schema"
 
+# TF conf: MODE=ON is allowed with a ns-valued timer (papi / clock_gettime).
+cat > "$TMP/tf.conf" <<EOF
+TACVAR_TIMER=clock_gettime
+TACVAR_NSTP=0
+TACVAR_COUNTER_BACKEND=none
+TACVAR_COUNTER_COUNT=0
+TACVAR_COUNTER_NAMES=
+TACVAR_OUTPUT_ROOT=.
+TACVAR_TF_SAMPLING_MODE=ON
+TACVAR_TF_DATA_ROOT=
+TACVAR_TF_REG_ID=2
+TACVAR_TF_LOC_ID=1
+EOF
+python3 "$ROOT/tools/gen_config.py" --conf "$TMP/tf.conf" --compiler gcc \
+  --consumer npb-mpi --outdir "$TMP/tf" --measure-root "$ROOT" >/dev/null
+check "gen_config TF ON + clock_gettime" grep -q '#define TACVAR_TF_SAMPLING 1' "$TMP/tf/tacvar_generated_config.h"
+check "gen_config TF site macro" grep -q '#define TACVAR_TF_REG_2_LOC_1 1' "$TMP/tf/tacvar_generated_config.h"
+check "gen_config TF not tick" grep -q '#define TACVAR_TF_TIMER_IS_TICK 0' "$TMP/tf/tacvar_generated_config.h"
+check "gen_config TF objs include tacvar_tf.o" grep -q 'tacvar_tf.o' "$TMP/tf/tacvar_generated_config.mk"
+
+# Compile tick header (arch-native).
+cat > "$TMP/tick.c" <<'EOF'
+#include <stdint.h>
+#include "gauge_tf_insitu.h"
+int main(void) {
+  uint64_t t = 0;
+  TACVAR_TF_TICK_READ(t);
+  (void)TACVAR_TF_TICK_TO_NS(t);
+  return 0;
+}
+EOF
+gcc -O2 -I"$ROOT/gauges" -I"$ROOT/timers" -DTACVAR_NSTP=10 \
+  -o "$TMP/tick" "$TMP/tick.c" "$ROOT/timers/timer_util.c" 2>/dev/null \
+  || gcc -O2 -I"$ROOT/gauges" -I"$ROOT/timers" -DTACVAR_NSTP=10 \
+       -o "$TMP/tick" "$TMP/tick.c"
+check "gauge_tf_insitu.h compiles" test -x "$TMP/tick"
+
 echo "unit tests: $pass passed, $fail failed"
 exit $fail

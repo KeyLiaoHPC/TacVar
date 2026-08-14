@@ -23,6 +23,32 @@
 #ifndef TACVAR_COUNTER_COUNT
 #define TACVAR_COUNTER_COUNT 0
 #endif
+#ifndef TACVAR_TF_SAMPLING
+#define TACVAR_TF_SAMPLING 0
+#endif
+#ifndef TACVAR_TF_SIDE
+#define TACVAR_TF_SIDE 0
+#endif
+#ifndef TACVAR_TF_REG_ID
+#define TACVAR_TF_REG_ID 0
+#endif
+#ifndef TACVAR_TF_LOC_ID
+#define TACVAR_TF_LOC_ID 0
+#endif
+#ifndef TACVAR_TF_SIDE_TFS
+#define TACVAR_TF_SIDE_TFS 1
+#endif
+#ifndef TACVAR_TF_SIDE_TFE
+#define TACVAR_TF_SIDE_TFE 2
+#endif
+
+#if TACVAR_TF_SAMPLING
+#include "gauge_sub.h"
+#include "gauge_tf_insitu.h"
+#endif
+
+#define TACVAR_TF_SITE_MATCH(n, loc) \
+    ((n) == TACVAR_TF_REG_ID && (loc) == TACVAR_TF_LOC_ID)
 
 #define TACVAR_NPB_SLOTS 64
 
@@ -32,6 +58,19 @@ static int cpu_start_slot[TACVAR_NPB_SLOTS];
 static int max_loc[TACVAR_NPB_SLOTS];
 #if TACVAR_COUNTER_COUNT > 0
 static uint64_t counter_start_slot[TACVAR_NPB_SLOTS][TACVAR_COUNTER_COUNT];
+#endif
+
+#if TACVAR_TF_SAMPLING && TACVAR_TF_SIDE == TACVAR_TF_SIDE_TFS
+static uint64_t tf_ra;
+static uint64_t tf_t_orig;
+static uint64_t tf_t_tick;
+static int tf_cpu0;
+static int tf_cpu1;
+static int tf_pending;
+#elif TACVAR_TF_SAMPLING && TACVAR_TF_SIDE == TACVAR_TF_SIDE_TFE
+static uint64_t tf_ra;
+static uint64_t tf_t_orig;
+static uint64_t tf_t_tick;
 #endif
 
 static char g_bench[64];
@@ -268,8 +307,38 @@ void tacvar_npb_timer_start(int n, int loc_id)
         }
     }
     note_loc(n, loc_id);
+
+#if TACVAR_TF_SAMPLING && TACVAR_TF_SIDE == TACVAR_TF_SIDE_TFS
+    if (TACVAR_TF_SITE_MATCH(n, loc_id)) {
+        uint64_t rb;
+        uint64_t ngauge = tacvar_tf_ngauge();
+        tf_cpu0 = sched_getcpu();
+        tacvar_tf_ensure_offset(tf_cpu0);
+        TACVAR_TF_WARMUP_REG(tf_ra, rb, ngauge);
+        TACVAR_TIMER_BEGIN(tf_t_orig);
+        TACVAR_TF_GAUGE_FROM_REG(tf_ra);
+        TACVAR_TF_TICK_READ(tf_t_tick);
+        tf_cpu1 = sched_getcpu();
+        tf_pending = 1;
+        (void)rb;
+        return;
+    }
+#endif
+
+#if TACVAR_TF_SAMPLING && TACVAR_TF_SIDE == TACVAR_TF_SIDE_TFE
+    if (TACVAR_TF_SITE_MATCH(n, loc_id)) {
+        uint64_t rb;
+        uint64_t ngauge = tacvar_tf_ngauge();
+        cpu_start_slot[n] = sched_getcpu();
+        TACVAR_TF_WARMUP_REG(tf_ra, rb, ngauge);
+        TACVAR_TIMER_BEGIN(timer_start_raw[n]);
+        (void)rb;
+        return;
+    }
+#endif
+
     cpu_start_slot[n] = sched_getcpu();
-#if TACVAR_COUNTER_COUNT > 0
+#if TACVAR_COUNTER_COUNT > 0 && !(TACVAR_TF_SAMPLING && TACVAR_TF_SIDE)
     if (tacvar_is_ready())
         TACVAR_COUNTER_READ(counter_start_slot[n]);
 #endif
@@ -288,6 +357,57 @@ void tacvar_npb_timer_stop(int n, int loc_id)
 
     if (n < 0 || n >= TACVAR_NPB_SLOTS)
         return;
+
+#if TACVAR_TF_SAMPLING && TACVAR_TF_SIDE == TACVAR_TF_SIDE_TFS
+    if (TACVAR_TF_SITE_MATCH(n, loc_id) && tf_pending) {
+        elapsed_ns = tacvar_tf_elapsed_ns(1, tf_t_orig, tf_t_tick);
+        elapsed[n] += (double)elapsed_ns * 1e-9;
+        note_loc(n, loc_id);
+        if (tacvar_is_ready()) {
+            tacvar_csv_write_simple(n, loc_id, tf_t_orig, tf_t_tick,
+                                    elapsed_ns, tf_cpu0, tf_cpu1,
+                                    NULL, NULL, NULL);
+        }
+        tf_pending = 0;
+        return;
+    }
+    if (!TACVAR_TF_SITE_MATCH(n, loc_id)) {
+        TACVAR_TIMER_END(timer_stop_raw);
+        elapsed_ns = TACVAR_TIMER_DELTA_NS(timer_start_raw[n], timer_stop_raw);
+        elapsed[n] += (double)elapsed_ns * 1e-9;
+        note_loc(n, loc_id);
+    }
+    (void)cpu_stop;
+    return;
+#endif
+
+#if TACVAR_TF_SAMPLING && TACVAR_TF_SIDE == TACVAR_TF_SIDE_TFE
+    if (TACVAR_TF_SITE_MATCH(n, loc_id)) {
+        register uint64_t ra = tf_ra;
+        int cpu0;
+
+        cpu0 = sched_getcpu();
+        tacvar_tf_ensure_offset(cpu0);
+        TACVAR_TF_TICK_READ(tf_t_tick);
+        TACVAR_TF_GAUGE_FROM_REG(ra);
+        TACVAR_TIMER_END(tf_t_orig);
+        cpu_stop = sched_getcpu();
+        elapsed_ns = tacvar_tf_elapsed_ns(0, tf_t_orig, tf_t_tick);
+        elapsed[n] += (double)elapsed_ns * 1e-9;
+        note_loc(n, loc_id);
+        if (tacvar_is_ready()) {
+            tacvar_csv_write_simple(n, loc_id, tf_t_tick, tf_t_orig,
+                                    elapsed_ns, cpu0, cpu_stop,
+                                    NULL, NULL, NULL);
+        }
+        return;
+    }
+    TACVAR_TIMER_END(timer_stop_raw);
+    elapsed_ns = TACVAR_TIMER_DELTA_NS(timer_start_raw[n], timer_stop_raw);
+    elapsed[n] += (double)elapsed_ns * 1e-9;
+    note_loc(n, loc_id);
+    return;
+#endif
 
     TACVAR_TIMER_END(timer_stop_raw);
 #if TACVAR_COUNTER_COUNT > 0

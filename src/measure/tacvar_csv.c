@@ -91,6 +91,17 @@ int tacvar_prepare_data_dir(tacvar_state_t *st, const char *output_root)
         return 0;
     }
 
+#if defined(TACVAR_TF_SAMPLING) && TACVAR_TF_SAMPLING
+    if (TACVAR_TF_DATA_ROOT[0]) {
+        snprintf(st->data_dir, sizeof(st->data_dir), "%s", TACVAR_TF_DATA_ROOT);
+        rc = mkdir(st->data_dir, 0755);
+        if (rc != 0 && errno != EEXIST)
+            return -errno;
+        setenv("TACVAR_DATA_DIR", st->data_dir, 1);
+        return 0;
+    }
+#endif
+
     root = output_root && output_root[0] ? output_root : TACVAR_OUTPUT_ROOT_DEFAULT;
     now = time(NULL);
     localtime_r(&now, &tm_now);

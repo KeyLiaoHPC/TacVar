@@ -60,5 +60,5 @@ grep -E 'Verification[[:space:]]*=[[:space:]]*SUCCESSFUL|SUCCESSFUL' /tmp/npb_me
 d=$(latest_data_dir)
 [[ -n "$d" ]] || { echo "no data_* after measure"; exit 1; }
 run_nspg "$d/nspg.txt"
-python3 "$SCRIPT_DIR/get_median.py" "$d"
+python3 "$SCRIPT_DIR/get_met_stat.py" "$d"
 echo "DATA_DIR=$d"

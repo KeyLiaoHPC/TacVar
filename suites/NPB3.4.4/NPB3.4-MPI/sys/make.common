@@ -50,9 +50,31 @@ ifneq ($(strip $(TACVAR_MEASURE_LDFLAGS)),)
 TACVAR_EXTRA_LIBS += $(TACVAR_MEASURE_LDFLAGS)
 endif
 endif
+
+ifeq ($(strip $(TACVAR_TF_SAMPLING_MODE)),)
+TACVAR_TF_SAMPLING_MODE := $(shell sed -n 's/^TACVAR_TF_SAMPLING_MODE=//p' $(TACVAR_CONF) 2>/dev/null)
+endif
 endif
 
 TACVAR_NPB_OBJ = $(COMMON)/tacvar_npb.o
+TACVAR_LINK_LIBS = $(TACVAR_LIB) $(TACVAR_EXTRA_LIBS)
+PROGRAM_TFS = $(BINDIR)/$(BENCHMARK).$(CLASS)_tfs.x
+PROGRAM_TFE = $(BINDIR)/$(BENCHMARK).$(CLASS)_tfe.x
+TACVAR_NPB_OBJ_TFS = $(COMMON)/tacvar_npb_tfs.o
+TACVAR_NPB_OBJ_TFE = $(COMMON)/tacvar_npb_tfe.o
+
+ifeq ($(filter is dt,$(BENCHMARK)),$(BENCHMARK))
+TACVAR_TF_LD = $(CLINK) $(CLINKFLAGS)
+else
+TACVAR_TF_LD = $(FLINK) $(FLINKFLAGS)
+endif
+
+# BT default (no SUBTYPE) links btio.o outside OBJS (see BT/Makefile bt-bt).
+ifeq ($(BENCHMARK),bt)
+TACVAR_TF_EXTRA_OBJS = btio.o
+else
+TACVAR_TF_EXTRA_OBJS =
+endif
 
 ${COMMON}/${RAND}.o: ${COMMON}/${RAND}.f90
 	cd ${COMMON}; ${FCOMPILE} ${RAND}.f90
@@ -79,6 +101,12 @@ ${COMMON}/c_timers.o: ${COMMON}/c_timers.c ../config/make.def ${TACVAR_GEN_H}
 
 ${COMMON}/tacvar_npb.o: ${COMMON}/tacvar_npb.c ../config/make.def ${TACVAR_GEN_H}
 	cd ${COMMON}; ${CCOMPILE} $(TACVAR_CFLAGS) tacvar_npb.c
+
+${COMMON}/tacvar_npb_tfs.o: ${COMMON}/tacvar_npb.c ../config/make.def ${TACVAR_GEN_H}
+	cd ${COMMON}; ${CCOMPILE} -DTACVAR_TF_SIDE=1 $(TACVAR_CFLAGS) -o tacvar_npb_tfs.o tacvar_npb.c
+
+${COMMON}/tacvar_npb_tfe.o: ${COMMON}/tacvar_npb.c ../config/make.def ${TACVAR_GEN_H}
+	cd ${COMMON}; ${CCOMPILE} -DTACVAR_TF_SIDE=2 $(TACVAR_CFLAGS) -o tacvar_npb_tfe.o tacvar_npb.c
 
 # Normally setparams updates npbparams.h only if the settings (CLASS)
 # have changed. However, we also want to update if the compile options
@@ -114,8 +142,13 @@ $(TACVAR_LIB): $(TACVAR_GEN_H)
 		PAPI_INC=$(PAPI_HOME)/include PAPI_LIB=$(PAPI_HOME)/lib
 
 # Inject TacVar into every benchmark link without editing per-bench Makefiles.
-FMPI_LIB += $(TACVAR_NPB_OBJ) $(TACVAR_LIB) $(TACVAR_EXTRA_LIBS)
-CMPI_LIB += $(TACVAR_NPB_OBJ) $(TACVAR_LIB) $(TACVAR_EXTRA_LIBS)
+ifeq ($(TACVAR_TF_SAMPLING_MODE),ON)
+FMPI_LIB += $(TACVAR_LINK_LIBS)
+CMPI_LIB += $(TACVAR_LINK_LIBS)
+else
+FMPI_LIB += $(TACVAR_NPB_OBJ) $(TACVAR_LINK_LIBS)
+CMPI_LIB += $(TACVAR_NPB_OBJ) $(TACVAR_LINK_LIBS)
+endif
 
 # Ensure tacvar objects exist before linking PROGRAM
 $(BINDIR):
@@ -123,8 +156,20 @@ $(BINDIR):
 
 ${PROGRAM}: $(TACVAR_LIB) $(TACVAR_NPB_OBJ) | $(BINDIR)
 
+# IS/DT assign OBJS after including this file; expand on the second pass.
+.SECONDEXPANSION:
+$(PROGRAM_TFS): config $$(OBJS) $(TACVAR_TF_EXTRA_OBJS) $(TACVAR_NPB_OBJ_TFS) $(TACVAR_LIB) | $(BINDIR)
+	$(TACVAR_TF_LD) -o $@ $(OBJS) $(TACVAR_TF_EXTRA_OBJS) $(TACVAR_NPB_OBJ_TFS) $(TACVAR_LINK_LIBS)
+
+$(PROGRAM_TFE): config $$(OBJS) $(TACVAR_TF_EXTRA_OBJS) $(TACVAR_NPB_OBJ_TFE) $(TACVAR_LIB) | $(BINDIR)
+	$(TACVAR_TF_LD) -o $@ $(OBJS) $(TACVAR_TF_EXTRA_OBJS) $(TACVAR_NPB_OBJ_TFE) $(TACVAR_LINK_LIBS)
+
 .PHONY: npb_default
+ifeq ($(TACVAR_TF_SAMPLING_MODE),ON)
+npb_default: $(PROGRAM_TFS) $(PROGRAM_TFE)
+else
 npb_default: $(PROGRAM)
+endif
 default:: npb_default
 
 FILT_CC ?= cc
@@ -145,5 +190,6 @@ nspg: $(BINDIR)/test_nspg.x
 # After editing tacvar.conf: make tacvar_clean && make <bench> CLASS=...
 .PHONY: tacvar_clean
 tacvar_clean:
-	- rm -f $(COMMON)/tacvar_npb.o $(COMMON)/c_timers.o
+	- rm -f $(COMMON)/tacvar_npb.o $(COMMON)/tacvar_npb_tfs.o \
+		$(COMMON)/tacvar_npb_tfe.o $(COMMON)/c_timers.o
 	- rm -rf $(TACVAR_OUTDIR)

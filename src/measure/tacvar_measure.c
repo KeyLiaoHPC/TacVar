@@ -107,6 +107,10 @@ int tacvar_init(const tacvar_context_t *ctx)
     }
 #endif
 
+    rc = tacvar_tf_prepare();
+    if (rc != 0)
+        return rc;
+
     rc = tacvar_csv_open(&g_tacvar);
     if (rc != 0) {
         fprintf(stderr, "tacvar: csv open failed (%d)\n", rc);

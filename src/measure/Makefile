@@ -45,6 +45,13 @@ $(OUTDIR)/tacvar_csv.o: $(MEASURE_ROOT)/tacvar_csv.c \
 		-include $(OUTDIR)/tacvar_generated_config.h \
 		-c $< -o $@
 
+$(OUTDIR)/tacvar_tf.o: $(MEASURE_ROOT)/tacvar_tf.c \
+		$(OUTDIR)/tacvar_generated_config.h
+	$(CC) $(CFLAGS) $(TACVAR_MEASURE_CFLAGS) -I$(OUTDIR) \
+		-DTACVAR_HAS_GENERATED_CONFIG \
+		-include $(OUTDIR)/tacvar_generated_config.h \
+		-c $< -o $@
+
 $(OUTDIR)/timer_util.o: $(MEASURE_ROOT)/timers/timer_util.c
 	$(CC) $(CFLAGS) $(TACVAR_MEASURE_CFLAGS) -I$(OUTDIR) -c $< -o $@
 

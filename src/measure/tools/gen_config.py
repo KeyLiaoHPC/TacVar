@@ -40,6 +40,7 @@ TIMERS_X86 = {
     "rdtsc", "rdtscp", "rdtscp_lfence", "tsc_asym",
 }
 TIMERS_ARM = {"cntvct_el0", "cntvct_el0_dmb"}
+TIMERS_TICK = TIMERS_X86 | TIMERS_ARM
 
 COUNTERS = ["none", "perf_event_open", "papi_read", "asm"]
 
@@ -207,6 +208,8 @@ def emit_header(
     tf_on: bool = False,
     tf_root: str = "",
     tf_nspg: float = 0.0,
+    tf_reg: int = 0,
+    tf_loc: int = 0,
 ) -> None:
     resolved = resolve_native(timer, consumer)
     prefix = TIMER_PREFIX[timer if timer == "native" else resolved]
@@ -252,6 +255,16 @@ def emit_header(
         f"#define TACVAR_TF_SAMPLING {1 if tf_on else 0}",
         f'#define TACVAR_TF_DATA_ROOT "{c_string(tf_root)}"',
         f"#define TACVAR_TF_NSPG {tf_nspg}",
+        f"#define TACVAR_TF_REG_ID {tf_reg}",
+        f"#define TACVAR_TF_LOC_ID {tf_loc}",
+        f"#define TACVAR_TF_TIMER_IS_TICK {1 if resolved in TIMERS_TICK else 0}",
+        f"#define TACVAR_TF_REG_{tf_reg}_LOC_{tf_loc} 1",
+        "#define TACVAR_TF_SIDE_OFF 0",
+        "#define TACVAR_TF_SIDE_TFS 1",
+        "#define TACVAR_TF_SIDE_TFE 2",
+        "#ifndef TACVAR_TF_SIDE",
+        "#define TACVAR_TF_SIDE TACVAR_TF_SIDE_OFF",
+        "#endif",
         "",
     ]
     if names:
@@ -297,9 +310,11 @@ def emit_mk(
     tf_on: bool = False,
     tf_root: str = "",
     tf_nspg: float = 0.0,
+    tf_reg: int = 0,
+    tf_loc: int = 0,
 ) -> None:
     resolved = resolve_native(timer, consumer)
-    objs = ["tacvar_measure.o", "tacvar_csv.o"]
+    objs = ["tacvar_measure.o", "tacvar_csv.o", "tacvar_tf.o"]
     cflags = [
         f"-I{measure_root}",
         f"-I{measure_root / 'include'}",
@@ -310,8 +325,8 @@ def emit_mk(
         "-DTACVAR_HAS_GENERATED_CONFIG=1",
     ]
     ldflags: list[str] = []
-    need_tsc = resolved in TIMERS_X86
-    if need_tsc:
+    need_tsc = resolved in TIMERS_X86 or (tf_on and arch == "x86_64")
+    if need_tsc and "timer_util.o" not in objs:
         objs.append("timer_util.o")
     if counter == "perf_event_open":
         objs.append("counter_perf_event.o")
@@ -354,6 +369,8 @@ def emit_mk(
         f"TACVAR_TF_SAMPLING_MODE := {'ON' if tf_on else 'OFF'}",
         f"TACVAR_TF_DATA_ROOT := {tf_root}",
         f"TACVAR_TF_NSPG := {tf_nspg}",
+        f"TACVAR_TF_REG_ID := {tf_reg}",
+        f"TACVAR_TF_LOC_ID := {tf_loc}",
         "",
     ]
     out_mk.write_text("\n".join(lines))
@@ -385,6 +402,18 @@ def main() -> None:
         tf_nspg = float(cfg.get("TACVAR_TF_NSPG", "0") or "0")
     except ValueError:
         raise SystemExit("TACVAR_TF_NSPG must be a number")
+    try:
+        tf_reg = int(cfg.get("TACVAR_TF_REG_ID", "0") or "0")
+        tf_loc = int(cfg.get("TACVAR_TF_LOC_ID", "0") or "0")
+    except ValueError:
+        raise SystemExit("TACVAR_TF_REG_ID and TACVAR_TF_LOC_ID must be integers")
+    if tf_reg < 0 or tf_loc < 0:
+        raise SystemExit("TACVAR_TF_REG_ID and TACVAR_TF_LOC_ID must be >= 0")
+    if tf_on and arch == "aarch64" and nstp <= 0:
+        raise SystemExit(
+            "TACVAR_TF_SAMPLING_MODE=ON on aarch64 requires TACVAR_NSTP > 0 "
+            "(tick-to-ns for unfenced cntvct)"
+        )
 
     # PAPI path required when selected
     if counter == "papi_read" or timer == "papi_get_real_nsec":
@@ -406,6 +435,8 @@ def main() -> None:
         tf_on,
         tf_root,
         tf_nspg,
+        tf_reg,
+        tf_loc,
     )
     emit_mk(
         outdir / "tacvar_generated_config.mk",
@@ -419,6 +450,8 @@ def main() -> None:
         tf_on,
         tf_root,
         tf_nspg,
+        tf_reg,
+        tf_loc,
     )
     extra = f" tf={('ON' if tf_on else 'OFF')}"
     print(
