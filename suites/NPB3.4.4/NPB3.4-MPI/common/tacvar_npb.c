@@ -20,19 +20,8 @@
 #include "tacvar_generated_config.h"
 #endif
 
-#if defined(TACVAR_TF_SAMPLING) && TACVAR_TF_SAMPLING
-#include "gauge_sub.h"
-#include "tacvar_tf_nsamp.h"
-#endif
-
 #ifndef TACVAR_COUNTER_COUNT
 #define TACVAR_COUNTER_COUNT 0
-#endif
-#ifndef TACVAR_TF_SAMPLING
-#define TACVAR_TF_SAMPLING 0
-#endif
-#ifndef TACVAR_TF_DATA_ROOT
-#define TACVAR_TF_DATA_ROOT ""
 #endif
 
 #define TACVAR_NPB_SLOTS 64
@@ -52,20 +41,6 @@ static int g_identity_set;
 static int g_init_warned;
 static int g_rank;
 static int g_timer_info_registered;
-
-#if TACVAR_TF_SAMPLING
-static uint64_t tacvar_tf_lookup_nsamp(int region_id, int loc_id)
-{
-    size_t i;
-
-    for (i = 0; i < TACVAR_TF_NSAMP_COUNT; i++) {
-        if (TACVAR_TF_NSAMP_TABLE[i].region_id == region_id &&
-            TACVAR_TF_NSAMP_TABLE[i].loc_id == loc_id)
-            return TACVAR_TF_NSAMP_TABLE[i].ngauge;
-    }
-    return 0;
-}
-#endif
 
 typedef struct {
     int region_id;
@@ -203,7 +178,7 @@ static void set_identity(void)
                 g_class[0] = rest[0];
                 g_class[1] = '\0';
             }
-            /* cg.C.x | cg.C_tf.x */
+            /* cg.C.x */
             if (rest[0] && rest[1] == '_') {
                 dot2 = strchr(rest + 2, '.');
                 if (dot2) {
@@ -246,11 +221,6 @@ int tacvar_npb_ensure_init(void)
     ctx.rank = rank;
     ctx.thread = 0;
     ctx.nprocs = nprocs;
-
-#if TACVAR_TF_SAMPLING
-    if (TACVAR_TF_DATA_ROOT[0])
-        setenv("TACVAR_DATA_DIR", TACVAR_TF_DATA_ROOT, 1);
-#endif
 
     /* Rank 0 must not return before Bcasts — peers would hang. */
     if (rank == 0) {
@@ -298,10 +268,6 @@ void tacvar_npb_timer_start(int n, int loc_id)
         }
     }
     note_loc(n, loc_id);
-#if TACVAR_TF_SAMPLING
-    (void)loc_id;
-    return;
-#endif
     cpu_start_slot[n] = sched_getcpu();
 #if TACVAR_COUNTER_COUNT > 0
     if (tacvar_is_ready())
@@ -313,11 +279,9 @@ void tacvar_npb_timer_start(int n, int loc_id)
 void tacvar_npb_timer_stop(int n, int loc_id)
 {
     int64_t elapsed_ns;
-#if !TACVAR_TF_SAMPLING
     uint64_t timer_stop_raw = 0;
     int cpu_stop;
-#endif
-#if TACVAR_COUNTER_COUNT > 0 && !TACVAR_TF_SAMPLING
+#if TACVAR_COUNTER_COUNT > 0
     uint64_t counter_stop[TACVAR_COUNTER_COUNT];
     uint64_t counter_delta[TACVAR_COUNTER_COUNT];
 #endif
@@ -325,48 +289,6 @@ void tacvar_npb_timer_stop(int n, int loc_id)
     if (n < 0 || n >= TACVAR_NPB_SLOTS)
         return;
 
-#if TACVAR_TF_SAMPLING
-    {
-        uint64_t nsamp = tacvar_tf_lookup_nsamp(n, loc_id);
-        uint64_t t0 = 0, t1 = 0;
-        int cpu_start, cpu_stop_tf;
-#if TACVAR_COUNTER_COUNT > 0
-        uint64_t counter_stop[TACVAR_COUNTER_COUNT];
-        uint64_t counter_delta[TACVAR_COUNTER_COUNT];
-#endif
-        if (nsamp == 0) {
-            note_loc(n, loc_id);
-            return;
-        }
-        cpu_start = sched_getcpu();
-#if TACVAR_COUNTER_COUNT > 0
-        if (tacvar_is_ready())
-            TACVAR_COUNTER_READ(counter_start_slot[n]);
-#endif
-        TACVAR_TF_SAMPLE_NS(nsamp, t0, t1);
-#if TACVAR_COUNTER_COUNT > 0
-        if (tacvar_is_ready()) {
-            TACVAR_COUNTER_READ(counter_stop);
-            TACVAR_COUNTER_DELTAS(counter_delta, counter_start_slot[n], counter_stop);
-        }
-#endif
-        cpu_stop_tf = sched_getcpu();
-        elapsed_ns = TACVAR_TIMER_DELTA_NS(t0, t1);
-        elapsed[n] += (double)elapsed_ns * 1e-9;
-        note_loc(n, loc_id);
-        if (tacvar_is_ready()) {
-            tacvar_csv_write_simple(n, loc_id, t0, t1, elapsed_ns,
-                                    cpu_start, cpu_stop_tf,
-#if TACVAR_COUNTER_COUNT > 0
-                                    counter_start_slot[n], counter_stop, counter_delta
-#else
-                                    NULL, NULL, NULL
-#endif
-                                    );
-        }
-        return;
-    }
-#else
     TACVAR_TIMER_END(timer_stop_raw);
 #if TACVAR_COUNTER_COUNT > 0
     if (tacvar_is_ready()) {
@@ -389,7 +311,6 @@ void tacvar_npb_timer_stop(int n, int loc_id)
 #endif
                                 );
     }
-#endif
 }
 
 double tacvar_npb_timer_read(int n)

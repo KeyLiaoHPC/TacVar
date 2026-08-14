@@ -62,7 +62,7 @@ clean:
 
 # After editing tacvar.conf — drop generated measure lib + timer glue, then rebuild.
 tacvar_clean:
-	- rm -f common/tacvar_npb.o common/tacvar_npb_tf.o common/c_timers.o
+	- rm -f common/tacvar_npb.o common/c_timers.o
 	- rm -rf config/tacvar_build_*
 
 filt:

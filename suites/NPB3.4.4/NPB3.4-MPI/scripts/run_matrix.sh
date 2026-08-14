@@ -10,7 +10,7 @@
 #    T5 papi_get_real_nsec   + none
 #    T6 papi_get_real_nsec   + papi_read×4   (cg 已完成, manifest 预置跳过)
 #
-# 每个组合: 常规测量 → nspg标定(每timer一次,跨组合复用) → median → TF采样 → FilT
+# 每个组合: 常规测量 → nspg标定(每timer一次,跨组合复用) → median
 # 幂等: manifest.csv 已有记录的组合跳过; 中断后重跑只补缺。
 # 节点礼貌: 每组合前检查 load, 超阈值等待; 全程串行; 单组合失败不中断整体。
 # 输出: 每组合一行摘要到 stdout + matrix/logs/<tag>.log; 数据在 matrix/data_<tag>/。
@@ -149,7 +149,6 @@ for bench in "${BENCH_LIST[@]}"; do
 
     ok_verification=""
     nspg_val=""
-    err_summary=""
     failed=0
 
     # ---- 1) 配置 conf: timer/counter, TF=OFF ----
@@ -212,47 +211,15 @@ for bench in "${BENCH_LIST[@]}"; do
       fi
     fi
 
-    # ---- 6) TF 模式构建 + 采样 ----
-    if [[ $failed -eq 0 ]]; then
-      set_conf_kv TACVAR_TF_SAMPLING_MODE ON
-      set_conf_kv TACVAR_TF_DATA_ROOT "$data_dir_abs"
-      if ! (cd "$SUITE" && make tacvar_clean && make "$bench_u" CLASS="$CLASS" PAPI_HOME="$PAPI_HOME") >> "$run_log" 2>&1; then
-        log "FAIL ${bench}.${CLASS} ${tag}: build (tf) failed"
-        failed=1
-      elif [[ ! -x "$SUITE/bin/${bench}.${CLASS}_tf.x" ]]; then
-        log "FAIL ${bench}.${CLASS} ${tag}: no _tf.x produced"
-        failed=1
-      else
-        if ! run_mpi TACVAR_DATA_DIR="$data_dir_abs" -- "$SUITE/bin/${bench}.${CLASS}_tf.x" >> "$run_log" 2>&1; then
-          log "FAIL ${bench}.${CLASS} ${tag}: tf run failed"
-          failed=1
-        fi
-      fi
-    fi
-
-    # ---- 7) FilT 过滤（远端 python3） ----
-    if [[ $failed -eq 0 ]]; then
-      if ! (cd "$SUITE" && python3 scripts/run_tf_filt.py "$data_dir_abs" --kernel-class "${bench}.${CLASS}") >> "$run_log" 2>&1; then
-        log "FAIL ${bench}.${CLASS} ${tag}: run_tf_filt failed"
-        failed=1
-      else
-        filt_root="$data_dir_abs/${bench}.${CLASS}_filt"
-        if [[ -d "$filt_root" ]]; then
-          errs=$(for d in "$filt_root"/r*_l*; do [[ -f "$d/er.out" ]] && cat "$d/er.out"; done | tr '\n' ',')
-          err_summary="$errs"
-        fi
-      fi
-    fi
-
-    # ---- 8) 恢复 conf + manifest ----
+    # ---- 6) 恢复 conf + manifest ----
     set_conf_kv TACVAR_TF_SAMPLING_MODE OFF
     set_conf_kv TACVAR_TF_DATA_ROOT ""
     t1=$(date +%s)
     if [[ $failed -eq 0 ]]; then
-      echo "${bench},${CLASS},${tag},${timer},${cbackend},${data_dir_rel},${ok_verification},${nspg_val},?,${err_summary},$(date '+%F %T')" >> "$MANIFEST"
-      log "OK   ${bench}.${CLASS} ${tag}  [$(($t1-$t0))s]  ver=${ok_verification} nspg=${nspg_val} er=[${err_summary}]"
+      echo "${bench},${CLASS},${tag},${timer},${cbackend},${data_dir_rel},${ok_verification},${nspg_val},?,,$(date '+%F %T')" >> "$MANIFEST"
+      log "OK   ${bench}.${CLASS} ${tag}  [$(($t1-$t0))s]  ver=${ok_verification} nspg=${nspg_val}"
     else
-      echo "${bench},${CLASS},${tag},${timer},${cbackend},${data_dir_rel},FAILED,${nspg_val},?,${err_summary},$(date '+%F %T')" >> "$MANIFEST"
+      echo "${bench},${CLASS},${tag},${timer},${cbackend},${data_dir_rel},FAILED,${nspg_val},?,,$(date '+%F %T')" >> "$MANIFEST"
       log "FAIL ${bench}.${CLASS} ${tag}  [$(($t1-$t0))s]  see $run_log"
     fi
   done

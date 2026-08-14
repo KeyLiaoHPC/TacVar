@@ -386,11 +386,6 @@ def main() -> None:
     except ValueError:
         raise SystemExit("TACVAR_TF_NSPG must be a number")
 
-    if tf_on and args.consumer != "npb-mpi":
-        raise SystemExit("TACVAR_TF_SAMPLING_MODE=ON is only supported for npb-mpi")
-    if tf_on and not tf_root:
-        raise SystemExit("TACVAR_TF_SAMPLING_MODE=ON requires TACVAR_TF_DATA_ROOT")
-
     # PAPI path required when selected
     if counter == "papi_read" or timer == "papi_get_real_nsec":
         if not args.papi_inc and not os.environ.get("PAPI_INC"):

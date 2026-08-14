@@ -4,7 +4,6 @@
  *
  * Layout: DATA_ROOT/timer_info.csv
  *         DATA_ROOT/Kernel.CLASS/<short_host>_rRRRR_tTTTT_pPID.csv
- *         DATA_ROOT/Kernel.CLASS_tf/   (in-situ gauge sampling)
  */
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE

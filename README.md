@@ -123,9 +123,9 @@ TACVAR_COUNTER_BACKEND=none
 TACVAR_COUNTER_COUNT=0           # must match number of names
 TACVAR_COUNTER_NAMES=            # comma-separated, e.g. cpu-cycles,instructions
 TACVAR_OUTPUT_ROOT=.             # CSV root relative to benchmark cwd
-TACVAR_TF_SAMPLING_MODE=OFF      # NPB-MPI only; ON rebuilds bin/<bench>.<CLASS>_tf.x
-TACVAR_TF_DATA_ROOT=             # existing data_YYYYMMDDTHHmmss (required when MODE=ON)
-TACVAR_TF_NSPG=0                 # ns/gauge-step; 0 → DATA_ROOT/nspg.txt
+TACVAR_TF_SAMPLING_MODE=OFF      # reserved; unused by NPB-MPI timers
+TACVAR_TF_DATA_ROOT=             # reserved
+TACVAR_TF_NSPG=0                 # reserved; nspg comes from test_nspg.x / nspg.txt
 ```
 
 Change conf → **rebuild** the suite. Runtime does not switch backends. Invalid consumer/arch combinations are rejected by `src/measure/tools/gen_config.py`.
@@ -250,19 +250,15 @@ bash src/measure/tests/run_unit_tests.sh
 # Build every legal timer/counter for this arch (temp conf; does not edit suite confs)
 bash src/measure/tests/run_backend_smoke.sh
 
-# NPB: --build-only | --run-smoke | --tf-smoke
-#   --run-smoke  CG Class S OMP<=4, IS Class S MPI np=4, then CG.S TF np=2
-#   --tf-smoke   CG Class S in-situ TF only (np=2)
+# NPB: --build-only | --run-smoke
+#   --run-smoke  CG Class S OMP<=4, IS Class S MPI np=4
 bash suites/NPB3.4.4/test_tacvar.sh --run-smoke
-bash suites/NPB3.4.4/test_tacvar.sh --tf-smoke
 
 # lmbench: lat_syscall null on one core; optional platform combo
 bash suites/lmbench/scripts/test_tacvar.sh --run-smoke
 
 # ARM host smoke (needs MPI/PAPI/kmod on that machine)
 bash src/measure/tests/run_arm_tests.sh
-# ARM KunPeng full-node in-situ TF (CG CLASS=C, np=128, ~/01-App OpenMPI 5.0.8)
-bash src/measure/tests/run_arm_tests.sh --tf-c920
 ```
 
 x86 smoke matrix (scripted): `native+none` for all three suites; then lmbench `tsc_asym+asm`, NPB-OMP `clock_gettime+perf_event_open`, NPB-MPI `mpi_wtime+papi_read`. ARM: `native+none`, then lmbench `cntvct_el0+perf_event_open`, NPB-OMP `cntvct_el0_dmb+asm`, NPB-MPI `mpi_wtime+perf_event_open` (set `TACVAR_NSTP` / `TACVAR_NSTP_ARM` to ns per CNTVCT tick from `CNTFRQ_EL0`). If PAPI’s HW component is unavailable on a platform, use `perf_event_open` or `asm` instead of `papi_read`; `papi_get_real_nsec` may still build.
@@ -286,13 +282,15 @@ cd suites/lmbench
 taskset -c 0 ./bin/$(cd src && ../scripts/os)/lat_syscall null
 ```
 
-### 3.9 NPB-MPI in-situ timing-fluctuation sampling
+### 3.9 NPB-MPI nspg and FilT
 
-Timer-adapter only (NPB kernels unchanged). Procedure, parameters, and notes:
+TacVar timers record kernel intervals under `data_<stamp>/<bench>.<CLASS>/`. Optional helpers (not in-situ TF sampling):
 
-[`suites/NPB3.4.4/NPB3.4-MPI/in-situ-sampling.md`](suites/NPB3.4.4/NPB3.4-MPI/in-situ-sampling.md)
+- `make nspg` → `bin/test_nspg.x` (fit ns per subtraction-gauge step).
+- `make filt` → `bin/filt.x` (FilT from `common/filt.c`).
+- Wrapper: `scripts/run_npb_measure.sh` (measure + nspg + `get_median.py`).
 
-Wrapper: `scripts/run_npb_measure.sh [measure|tf|all]` with `NP`, `BENCH`, `CLASS`. c920bn1 acceptance: `bash src/measure/tests/run_arm_tests.sh --tf-c920`.
+`TACVAR_TF_*` keys in `tacvar.conf` are reserved and unused by the NPB timer path.
 
 ### 3.10 Troubleshooting
 
