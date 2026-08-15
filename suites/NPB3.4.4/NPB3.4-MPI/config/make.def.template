@@ -87,7 +87,7 @@ CMPI_LIB =
 #---------------------------------------------------------------------------
 # These macros are passed to the compiler to help find 'mpi.h'
 #---------------------------------------------------------------------------
-CMPI_INC =
+CMPI_INC = -I/home/hpckey/01-App/papi/include
 
 #---------------------------------------------------------------------------
 # Global *compile time* flags for C programs

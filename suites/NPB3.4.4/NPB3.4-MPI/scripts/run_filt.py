@@ -15,12 +15,22 @@ from pathlib import Path
 
 DIR_RE = re.compile(r"^([A-Za-z0-9]+)\.([A-Za-z])$")
 TF_RE = re.compile(r"^([A-Za-z0-9]+)\.([A-Za-z])_(tfs|tfe)$")
+SITE_RE = re.compile(r"^([A-Za-z0-9]+)\.([A-Za-z])_r(\d+)_l(\d+)$")
+
+
+def is_new_tree(root: Path) -> bool:
+    return (root / "met").is_dir() and (root / "tf").is_dir()
 
 
 def load_nspg(root: Path) -> float:
-    path = root / "nspg.txt"
-    if not path.is_file():
-        raise SystemExit(f"missing {path}")
+    candidates = [
+        root / "nspg.txt",
+        root / "met" / "nspg.txt",
+        root.parent / "nspg.txt",
+    ]
+    path = next((p for p in candidates if p.is_file()), None)
+    if path is None:
+        raise SystemExit(f"missing nspg.txt under {root} or {root.parent}")
     v = float(path.read_text().split()[0])
     if v <= 0.0:
         raise SystemExit(f"bad nspg in {path}")
@@ -32,7 +42,9 @@ def load_ngauge_table(root: Path) -> dict[tuple[str, str, int, int], tuple[int, 
     out: dict[tuple[str, str, int, int], tuple[int, int]] = {}
     path = root / "median.csv"
     if not path.is_file():
-        raise SystemExit(f"missing {path}")
+        path = root / "met" / "median.csv"
+    if not path.is_file():
+        raise SystemExit(f"missing median.csv under {root} or {root}/met")
     with path.open(newline="") as fp:
         for rec in csv.DictReader(fp):
             try:
@@ -127,6 +139,14 @@ def find_filt_x(root: Path, explicit: str | None) -> Path:
         if p.is_file():
             return p
         raise SystemExit(f"filt.x not found: {p}")
+    walk = root
+    for _ in range(6):
+        cand = walk / "bin" / "filt.x"
+        if cand.is_file():
+            return cand
+        if walk.parent == walk:
+            break
+        walk = walk.parent
     candidates = [
         root.parent / "bin" / "filt.x",
         Path.cwd() / "bin" / "filt.x",
@@ -186,9 +206,112 @@ def collect_sites(
     return out
 
 
+def collect_new_tree_jobs(
+    root: Path,
+    ngauge_tab: dict[tuple[str, str, int, int], tuple[int, int]],
+    nspg: float,
+    rid_f: int | None,
+    lid_f: int | None,
+) -> list[tuple[str, str, Path, Path, Path, Path, int, int, int]]:
+    """(k, c, met_dir, tfs_dir, tfe_dir, out_dir, rid, loc, ngauge)."""
+    jobs = []
+    tf_root = root / "tf"
+    met_root = root / "met"
+    filt_root = root / "filter"
+    if not tf_root.is_dir():
+        return jobs
+    for site_dir in sorted(tf_root.iterdir()):
+        if not site_dir.is_dir():
+            continue
+        m = SITE_RE.match(site_dir.name)
+        if not m:
+            continue
+        k = m.group(1).upper()
+        c = m.group(2).upper()
+        rid = int(m.group(3))
+        loc = int(m.group(4))
+        if rid_f is not None and rid != rid_f:
+            continue
+        if lid_f is not None and loc != lid_f:
+            continue
+        tfs_dir = site_dir / "tfs"
+        tfe_dir = site_dir / "tfe"
+        met_dir = met_root / f"{m.group(1)}.{m.group(2)}"
+        if not met_dir.is_dir():
+            met_dir = met_root / f"{k}.{c}"
+        if not (tfs_dir.is_dir() and tfe_dir.is_dir() and met_dir.is_dir()):
+            continue
+        med, ng = ngauge_tab.get((k, c, rid, loc), (0, 0))
+        jobs.append(
+            (
+                k,
+                c,
+                met_dir,
+                tfs_dir,
+                tfe_dir,
+                filt_root / site_dir.name,
+                rid,
+                loc,
+                resolve_ngauge(med, ng, nspg),
+            )
+        )
+    return jobs
+
+
+def run_one_site(
+    k: str,
+    c: str,
+    met_dir: Path,
+    tfs_dir: Path,
+    tfe_dir: Path,
+    out_dir: Path,
+    rid: int,
+    loc: int,
+    ng: int,
+    nspg: float,
+    filt_x: Path,
+    width: int,
+    nsamp: int,
+    plow: float,
+) -> bool:
+    if ng < 1:
+        print(f"skip {k}.{c} r{rid} l{loc}: ngauge < 1", file=sys.stderr)
+        return False
+    tfs = collect_site_elapsed(tfs_dir, rid, loc)
+    tfe = collect_site_elapsed(tfe_dir, rid, loc)
+    met = collect_site_elapsed(met_dir, rid, loc)
+    tf = combine_tf(tfs, tfe, nspg, ng)
+    if not met or not tf:
+        print(
+            f"skip {k}.{c} r{rid} l{loc}: met={len(met)} tf={len(tf)} "
+            f"tfs={len(tfs)} tfe={len(tfe)}",
+            file=sys.stderr,
+        )
+        return False
+    out_dir.mkdir(parents=True, exist_ok=True)
+    write_col(out_dir / "met.csv", met)
+    write_col(out_dir / "tf.csv", tf)
+    cmd = [
+        str(filt_x),
+        "-m",
+        "met.csv",
+        "-s",
+        "tf.csv",
+        "-w",
+        str(width),
+        "-n",
+        str(nsamp),
+        "-l",
+        str(plow),
+    ]
+    print(f"filt {out_dir} (nmet={len(met)} ntf={len(tf)} ngauge={ng})")
+    subprocess.check_call(cmd, cwd=out_dir)
+    return True
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("data_root", help="data_YYYYMMDDTHHmmss directory")
+    ap.add_argument("data_root", help="old data_* dir, or combo dir with met/tf/filter/")
     ap.add_argument("--rid", "--region-id", type=int, default=None,
                     help="only this region_id (default: all)")
     ap.add_argument("--lid", "--loc-id", type=int, default=None,
@@ -207,61 +330,44 @@ def main() -> None:
 
     nspg = load_nspg(root)
     ngauge_tab = load_ngauge_table(root)
-    met_dirs = find_kernel_dirs(root)
-    tf_dirs = find_tf_dirs(root)
     filt_x = find_filt_x(root, args.filt or None)
-
-    pairs = []
-    for (k, c), met_dir in met_dirs.items():
-        tfs_dir = tf_dirs.get((k, c, "tfs"))
-        tfe_dir = tf_dirs.get((k, c, "tfe"))
-        if tfs_dir and tfe_dir:
-            pairs.append((k, c, met_dir, tfs_dir, tfe_dir))
-    if not pairs:
-        raise SystemExit(f"no Kernel.CLASS + _tfs + _tfe trio under {root}")
 
     nsite = 0
     nmatch = 0
-    for k, c, met_dir, tfs_dir, tfe_dir in pairs:
-        sites = collect_sites(
-            k, c, tfs_dir, ngauge_tab, nspg, args.rid, args.lid
-        )
-        nmatch += len(sites)
-        for rid, loc, ng in sites:
-            if ng < 1:
-                print(f"skip {k}.{c} r{rid} l{loc}: ngauge < 1", file=sys.stderr)
-                continue
-            tfs = collect_site_elapsed(tfs_dir, rid, loc)
-            tfe = collect_site_elapsed(tfe_dir, rid, loc)
-            met = collect_site_elapsed(met_dir, rid, loc)
-            tf = combine_tf(tfs, tfe, nspg, ng)
-            if not met or not tf:
-                print(
-                    f"skip {k}.{c} r{rid} l{loc}: met={len(met)} tf={len(tf)} "
-                    f"tfs={len(tfs)} tfe={len(tfe)}",
-                    file=sys.stderr,
-                )
-                continue
-            out_dir = root / f"{met_dir.name}_filt" / f"r{rid}_l{loc}"
-            out_dir.mkdir(parents=True, exist_ok=True)
-            write_col(out_dir / "met.csv", met)
-            write_col(out_dir / "tf.csv", tf)
-            cmd = [
-                str(filt_x),
-                "-m",
-                "met.csv",
-                "-s",
-                "tf.csv",
-                "-w",
-                str(args.width),
-                "-n",
-                str(args.nsamp),
-                "-l",
-                str(args.plow),
-            ]
-            print(f"filt {out_dir} (nmet={len(met)} ntf={len(tf)} ngauge={ng})")
-            subprocess.check_call(cmd, cwd=out_dir)
-            nsite += 1
+    if is_new_tree(root):
+        jobs = collect_new_tree_jobs(root, ngauge_tab, nspg, args.rid, args.lid)
+        nmatch = len(jobs)
+        if not jobs and args.rid is None and args.lid is None:
+            raise SystemExit(f"no tf/kernel.class_rx_lx/{{tfs,tfe}} under {root}")
+        for k, c, met_dir, tfs_dir, tfe_dir, out_dir, rid, loc, ng in jobs:
+            if run_one_site(
+                k, c, met_dir, tfs_dir, tfe_dir, out_dir, rid, loc, ng,
+                nspg, filt_x, args.width, args.nsamp, args.plow,
+            ):
+                nsite += 1
+    else:
+        met_dirs = find_kernel_dirs(root)
+        tf_dirs = find_tf_dirs(root)
+        pairs = []
+        for (k, c), met_dir in met_dirs.items():
+            tfs_dir = tf_dirs.get((k, c, "tfs"))
+            tfe_dir = tf_dirs.get((k, c, "tfe"))
+            if tfs_dir and tfe_dir:
+                pairs.append((k, c, met_dir, tfs_dir, tfe_dir))
+        if not pairs:
+            raise SystemExit(f"no Kernel.CLASS + _tfs + _tfe trio under {root}")
+        for k, c, met_dir, tfs_dir, tfe_dir in pairs:
+            sites = collect_sites(
+                k, c, tfs_dir, ngauge_tab, nspg, args.rid, args.lid
+            )
+            nmatch += len(sites)
+            for rid, loc, ng in sites:
+                out_dir = root / f"{met_dir.name}_filt" / f"r{rid}_l{loc}"
+                if run_one_site(
+                    k, c, met_dir, tfs_dir, tfe_dir, out_dir, rid, loc, ng,
+                    nspg, filt_x, args.width, args.nsamp, args.plow,
+                ):
+                    nsite += 1
     if args.rid is not None or args.lid is not None:
         sel = []
         if args.rid is not None:

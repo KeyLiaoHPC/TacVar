@@ -9,11 +9,14 @@
 #   bash scripts/filt_watch.sh --once     # 单轮后退出（冒烟/手动）
 #   环境变量: FILT_WATCH_INTERVAL（默认 60）、FILT_BIN（默认 bin/filt.x86.x）
 # 幂等：已滤站点记录在 <root>/filter_done.tsv，失败重试 3 次后记 filter_fail.tsv。
+# MATRIX_GLOB 环境变量可覆盖扫描范围（三节点矩阵时一次扫描多个副本的 manifest，
+# 例如 MATRIX_GLOB="/mnt/keylabmain/nfs/hpckey/03-Project/TacVar_NPC_*/suites/.../matrix/ext_*/T*/manifest.csv"）。
 # =============================================================================
 set -uo pipefail
 SUITE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FILT_BIN="${FILT_BIN:-$SUITE/bin/filt.x86.x}"
 INTERVAL="${FILT_WATCH_INTERVAL:-60}"
+MATRIX_GLOB="${MATRIX_GLOB:-$SUITE/matrix/ext_*/T*/manifest.csv}"
 ONCE=0
 [[ "${1:-}" == "--once" ]] && ONCE=1
 
@@ -29,7 +32,7 @@ process_one() {   # process_one BENCH SITE DATA_DIR ROOT
   local rid loc
   rid="${site#r}"; rid="${rid%_*}"; loc="${site#*_}"; loc="${loc#l}"
   local done_file="$root/filter_done.tsv" fail_file="$root/filter_fail.tsv"
-  [[ -f "$done_file" ]] && grep -q "^${bench},${site}," "$done_file" 2>/dev/null && return 0
+  [[ -f "$done_file" ]] && grep -q "^${bench}[[:space:]]${site}[[:space:]]" "$done_file" 2>/dev/null && return 0
   local err_log="$root/filt_err_${bench}_${site}.log"
   if python3 "$SUITE/scripts/run_filt.py" "$data_dir" --rid "$rid" --lid "$loc" \
       --filt "$FILT_BIN" >"$err_log" 2>&1; then
@@ -54,20 +57,31 @@ process_one() {   # process_one BENCH SITE DATA_DIR ROOT
 
 while :; do
   touched=0
-  for mf in "$SUITE"/matrix/ext_*/T*/manifest.csv; do
+  # 收集本轮所有 MEASURED 且未过滤的站点（multi-root），随后用 xargs -P 并行过滤。
+  # 串行过滤约 3-4 分钟/站（nsamp=1e6 蒙特卡洛），全矩阵 810 站必须并行（工作台 56 核）。
+  pending_file=$(mktemp)
+  for mf in $MATRIX_GLOB; do
     [[ -f "$mf" ]] || continue
     root="$(dirname "$mf")"
-    # status=MEASURED 且不在 done 账本的行 -> 过滤
+    done_file="$root/filter_done.tsv"
+    fail_file="$root/filter_fail.tsv"
     awk -F, '$3=="MEASURED"' "$mf" | while IFS= read -r ln; do
       bench="${ln%%,*}"; rest="${ln#*,}"; site="${rest%%,*}"
       [[ "$site" == "site" ]] && continue
-      # manifest 列: bench,site,status,...,data_dir(第11列),finished_at(第12列)
+      [[ -f "$done_file" ]] && grep -q "^${bench}[[:space:]]${site}[[:space:]]" "$done_file" 2>/dev/null && continue
       data_dir="$(echo "$ln" | cut -d, -f11)"
       [[ -d "$data_dir" ]] || { echo "[$(date '+%F %T')] skip missing data_dir: $data_dir"; continue; }
-      process_one "$bench" "$site" "$data_dir" "$root"
+      printf '%s\t%s\t%s\t%s\n' "$bench" "$site" "$data_dir" "$root" >> "$pending_file"
     done
     touched=1
   done
+  if [[ -s "$pending_file" ]]; then
+    echo "[$(date '+%F %T')] dispatching $(wc -l < "$pending_file") pending site(s) with -P ${FILT_WATCH_PARALLEL:-24}"
+    export -f process_one   # xargs 的 bash -c 需要继承函数
+    export SUITE            # process_one 内部引用 $SUITE/scripts/run_filt.py
+    xargs -P "${FILT_WATCH_PARALLEL:-24}" -n4 bash -c 'process_one "$1" "$2" "$3" "$4"' _ < "$pending_file"
+  fi
+  rm -f "$pending_file"
   [[ $ONCE -eq 1 ]] && break
   sleep "$INTERVAL"
 done

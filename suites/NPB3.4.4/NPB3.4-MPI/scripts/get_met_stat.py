@@ -55,8 +55,7 @@ def load_timer_event(data_root: Path) -> tuple[str, str]:
     return timer, event
 
 
-def load_nspg(data_root: Path) -> float | None:
-    path = data_root / "nspg.txt"
+def load_nspg_file(path: Path) -> float | None:
     if not path.is_file():
         return None
     text = path.read_text().split()
@@ -67,6 +66,10 @@ def load_nspg(data_root: Path) -> float | None:
     except ValueError:
         return None
     return v if v > 0.0 else None
+
+
+def load_nspg(data_root: Path) -> float | None:
+    return load_nspg_file(data_root / "nspg.txt")
 
 
 def read_elapsed(path: Path) -> list[tuple[int, int, int, int]]:
@@ -90,14 +93,15 @@ def read_elapsed(path: Path) -> list[tuple[int, int, int, int]]:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("data_root", help="data_YYYYMMDDTHHmmss directory")
+    ap.add_argument("data_root", help="data_YYYYMMDDTHHmmss or combo/met directory")
+    ap.add_argument("--nspg", default="", help="path to nspg.txt (default: data_root/nspg.txt)")
     args = ap.parse_args()
     root = Path(args.data_root).resolve()
     if not root.is_dir():
         raise SystemExit(f"not a directory: {root}")
 
     timer, event = load_timer_event(root)
-    nspg = load_nspg(root)
+    nspg = load_nspg_file(Path(args.nspg)) if args.nspg else load_nspg(root)
     buckets: dict[tuple[str, str, int, int], list[int]] = defaultdict(list)
     ranks: dict[tuple[str, str, int, int], set[int]] = defaultdict(set)
     nfiles = 0

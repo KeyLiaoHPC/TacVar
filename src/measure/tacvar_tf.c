@@ -246,6 +246,22 @@ void tacvar_tf_ensure_offset(int cpu)
         return;
     if (g_tf_valid[cpu])
         return;
+    /* 非 tick 计时器的 TF 采样仍用 tick 时钟换算（gauge_tf_insitu.h 的
+     * TICK_TO_NS），此处确保速率变量已初始化：ARM 从 TACVAR_NSPT_FILE /
+     * TACVAR_NSTP 装载，x86 走 tsc 校准（CPUID + 内核 refined 回退）。
+     * 缺这一初始化会让 g_tacvar_ns_per_tick = 0，tfs 全部钳零、
+     * tfe 随时间线性膨胀（2026-08-16 冒烟实测，经用户批准修复）。 */
+    {
+        static int rate_ready = 0;
+        if (!rate_ready) {
+#if defined(__x86_64__)
+            tacvar_tsc_calibrate();
+#else
+            tacvar_rate_init((const char *)0, (double)TACVAR_NSTP);
+#endif
+            rate_ready = 1;
+        }
+    }
     TACVAR_TIMER_BEGIN(o);
     TACVAR_TF_TICK_READ(k);
     g_tf_offset[cpu] = (int64_t)o - TACVAR_TF_TICK_TO_NS(k);

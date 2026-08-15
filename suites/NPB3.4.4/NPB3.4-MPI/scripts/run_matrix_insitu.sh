@@ -14,24 +14,24 @@
 # 幂等：manifest.csv（SUCCESSFUL 行跳过）；FAILED 行续跑重试；全程串行；
 #   load 门控（不打扰节点）；本脚本不使用任何 git 命令。
 #
-# 用法（在 c920bn1 上执行，NFS 与工作台共享同一路径）：
-#   bash scripts/run_matrix_insitu.sh                          # 全矩阵（77 站）
-#   bash scripts/run_matrix_insitu.sh --only bt                # 单 kernel
-#   bash scripts/run_matrix_insitu.sh --only bt --site r9_l2   # 单站冒烟
-#   bash scripts/run_matrix_insitu.sh --combo T1,T2,T4,T5,T6 --sites good \
-#        --no-wait --no-filt                                   # 扩展：计时器×事件
-#   --combo Tn,Tm: 组合循环（独立根 matrix/ext_<stamp>/T<t>/）；缺省=单组合兼容旧行为
-#   --sites good: 只用 T3 实测 er<0.05 的 49 个良质站点；缺省=77 站全集
+# 用法（在目标节点上执行，NFS 与工作台共享同一路径）：
+#   bash scripts/run_matrix_insitu.sh --combo T1,T2,T3,T4,T5,T6 --no-filt   # 全矩阵（45 站）
+#   bash scripts/run_matrix_insitu.sh --only bt --site r9_l2 --combo T3     # 单站冒烟
+#   节点参数（MPI/PAPI/tick 计时器/进程数/PAPI 事件名）按 NODE 自动选择（见顶部节点参数表；
+#   camd9755n2 的 hostname 不是节点名，启动时须显式 NODE=camd9755n2）。
+#   --combo Tn,Tm: 组合循环（独立根 matrix/ext_<stamp>/T<t>/）
 #   --no-wait: 关闭 load 门控（独占串行）；--no-filt: 采样后不跑 FilT（本机 watcher 处理）
+#   SLEEP_BEFORE_KERNEL / SLEEP_AFTER_KERNEL: 每次 kernel 运行前后等待秒数（默认 5）
 # =============================================================================
 set -uo pipefail
 
 # ---------------- 顶部用户参数 ----------------
 SUITE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BENCH_LIST=(bt cg ep ft is lu mg sp)          # 矩阵 kernel
+BENCH_LIST=(bt cg ep ft lu mg sp)             # 矩阵 kernel（is 无入选站点，不跑）
 CLASS="C"
-NP=128                                        # 默认进程数
-declare -A BENCH_NP=( [bt]=121 [sp]=121 )     # BT/SP 源码硬性要求平方进程数
+NODE="${NODE:-$(hostname -s)}"                # 节点名；camd9755n2 的 hostname 是 node1，须显式传
+SLEEP_BEFORE_KERNEL="${SLEEP_BEFORE_KERNEL:-5}"   # kernel 运行前等待秒数（节点恢复安静）
+SLEEP_AFTER_KERNEL="${SLEEP_AFTER_KERNEL:-5}"     # kernel 运行后等待秒数
 LOAD_MAX="${LOAD_MAX:-2.0}"                   # load 超过此值等待（勿打扰节点）
 POLL_INT="${POLL_INT:-60}"                    # load 等待轮询秒数
 MIN_SAMPLES_PER_RANK=10                       # 单 rank 最少测点数
@@ -39,54 +39,91 @@ MEDIAN_NS_MAX=1000000                         # 站点中位数上限：1 ms（n
 RUN_TIMEOUT=1500                              # 单次 mpirun 超时上限（秒）
 STAMP="${STAMP:-$(date +%Y%m%dT%H%M%S)}"      # 本轮矩阵戳（可覆盖）
 
-MPI_HOME=/home/hpckey/01-App/openmpi-5.0.8
-PAPI_HOME=/home/hpckey/01-App/papi
+# ---- 节点参数表（控制变量：绑定方式/进程数/tick 计时器/PAPI 事件按节点固定）----
+declare -A NODE_MPI_HOME=(
+  [c920bn1]=/home/hpckey/01-App/openmpi-5.0.8
+  [cgnr6760pn1]=/home/hpckey/01-App/openmpi-5.0.9
+  [camd9755n2]=/home/hpckey/01-App/openmpi-5.0.8   # 2026-08-15 18:02 重装带 Fortran 的 5.0.8
+)
+declare -A NODE_MPI_LIB=(
+  [c920bn1]=/home/hpckey/01-App/openmpi-5.0.8/lib
+  [cgnr6760pn1]=/home/hpckey/01-App/openmpi-5.0.9/lib
+  [camd9755n2]=/home/hpckey/01-App/openmpi-5.0.8/lib
+)
+declare -A NODE_PAPI_HOME=(
+  [c920bn1]=/home/hpckey/01-App/papi
+  [cgnr6760pn1]=/home/hpckey/01-App/papi
+  [camd9755n2]=/home/hpckey/01-App/papi
+)
+declare -A NODE_TICK=(                       # 架构 tick 计时器：aarch64=cntvct_el0, x86=rdtscp
+  [c920bn1]=cntvct_el0 [cgnr6760pn1]=rdtscp [camd9755n2]=rdtscp
+)
+declare -A NODE_NP=(                         # 尽量用满全部核心
+  [c920bn1]=128 [cgnr6760pn1]=128 [camd9755n2]=256
+)
+declare -A NODE_BTSP_NP=(                    # BT/SP 源码硬性要求平方进程数（11^2 / 16^2）
+  [c920bn1]=121 [cgnr6760pn1]=121 [camd9755n2]=256
+)
+# papi_read 的 4 事件。c920bn1 沿用原预设事件名；两台 x86 的 PAPI 7.2.0 无预设映射
+# （实测 Preset=0 / 缺 TOT_CYC），改用 perf 原生枚举名（2026-08-16 实测双节点可用）：
+#   周期 = PERF_COUNT_HW_CPU_CYCLES，指令 = PERF_COUNT_HW_INSTRUCTIONS，
+#   读访问 = L1-DCACHE-LOADS，分支 = PERF_COUNT_HW_BRANCH_INSTRUCTIONS
+declare -A NODE_PAPI_EVENTS=(
+  [c920bn1]="CPU_CYCLES,INST_RETIRED,PAPI_STL_ICY,PAPI_LST_INS"
+  [cgnr6760pn1]="perf::PERF_COUNT_HW_CPU_CYCLES,perf::PERF_COUNT_HW_INSTRUCTIONS,perf::L1-DCACHE-LOADS,perf::PERF_COUNT_HW_BRANCH_INSTRUCTIONS"
+  [camd9755n2]="perf::PERF_COUNT_HW_CPU_CYCLES,perf::PERF_COUNT_HW_INSTRUCTIONS,perf::L1-DCACHE-LOADS,perf::PERF_COUNT_HW_BRANCH_INSTRUCTIONS"
+)
+MPI_HOME="${NODE_MPI_HOME[$NODE]:?未知节点: $NODE (允许 c920bn1/cgnr6760pn1/camd9755n2)}"
+MPI_LIB="${NODE_MPI_LIB[$NODE]:-$MPI_HOME/lib}"
+PAPI_HOME="${NODE_PAPI_HOME[$NODE]}"
+TICK_TIMER="${NODE_TICK[$NODE]}"
+NP="${NODE_NP[$NODE]}"
+declare -A BENCH_NP=( [bt]="${NODE_BTSP_NP[$NODE]}" [sp]="${NODE_BTSP_NP[$NODE]}" )
+PAPI_EVENTS="${NODE_PAPI_EVENTS[$NODE]}"
 export PATH="$MPI_HOME/bin:$PATH"
-export LD_LIBRARY_PATH="$MPI_HOME/lib:$PAPI_HOME/lib:${LD_LIBRARY_PATH:-}"
+export LD_LIBRARY_PATH="$MPI_LIB:$PAPI_HOME/lib:${LD_LIBRARY_PATH:-}"
+# nspg 的 lib 构建用 $(CC)（默认裸 cc），native=MPI_Wtime 需 mpi.h；
+# 导出 CC=mpicc 让 nspg 目标以 MPI 包装器编译（不改任何 Makefile/源码）。
+export CC="$(command -v mpicc)"
+PYTHON="${PYTHON:-python3}"                   # get_met_stat / gate 的解释器（节点已装用户级 numpy）
 
 # 计时组合默认值（单组合模式；扩展模式由 COMBO_TAGS 覆盖）
-TIMER=cntvct_el0
+TIMER=native
 COUNTER_BACKEND=none
 COUNTER_COUNT=0
 COUNTER_NAMES=""
 NSTP=10
 
-# 计时×事件组合表（与 2026-08-13 旧矩阵 run_matrix.sh 同源）
+# 计时×事件组合表（T1..T6，2026-08-16 三节点矩阵定义）
 # 格式: 标签|TIMER|COUNTER_BACKEND|COUNTER_COUNT|COUNTER_NAMES|NSTP
-# NSTP 恒为 10：aarch64 上 tfs/tfe 的 gauge tick 时钟总是 cntvct_el0（10ns/tick，
-# tacvar_tf.c 的 TICK_TO_NS 用 NSTP 换算；非 tick 计时器经 per-CPU offset 对齐），
-# 与 TACVAR_TIMER 无关。NSTP<10 会让 tikc 侧 elapsed 偏小（冒烟实测 er 爆炸）。
+#   T1/T2 计时器 = native（NPB 原始 MPI_Wtime，OpenMPI 内部即 CLOCK_MONOTONIC）
+#   T3/T4 计时器 = 架构 tick：cntvct_el0（aarch64）/ rdtscp（x86）
+#   T5/T6 计时器 = papi_get_real_nsec
+#   奇数标签无事件读取，偶数标签 papi_read 4 事件（事件名按节点见 NODE_PAPI_EVENTS）。
+# 注意：T1/T2 与 2026-08-13 归档的 T1/T2（clock_gettime）定义不同，跨归档对比时以
+# REPORT 中的定义为准。NSTP 恒为 10：tfs/tfe 的 gauge tick 换算在 aarch64 用
+# g_tacvar_ns_per_tick（nspt 实测值覆盖），x86 用运行时 TSC 自校准，NSTP 只是占位。
 declare -A COMBO_TAGS=(
-  [T1]="clock_gettime|none|0||10"
-  [T2]="clock_gettime|papi_read|4|CPU_CYCLES,INST_RETIRED,PAPI_STL_ICY,PAPI_LST_INS|10"
-  [T3]="cntvct_el0|none|0||10"
-  [T4]="cntvct_el0|papi_read|4|CPU_CYCLES,INST_RETIRED,PAPI_STL_ICY,PAPI_LST_INS|10"
+  [T1]="native|none|0||10"
+  [T2]="native|papi_read|4|${PAPI_EVENTS}|10"
+  [T3]="${TICK_TIMER}|none|0||10"
+  [T4]="${TICK_TIMER}|papi_read|4|${PAPI_EVENTS}|10"
   [T5]="papi_get_real_nsec|none|0||10"
-  [T6]="papi_get_real_nsec|papi_read|4|CPU_CYCLES,INST_RETIRED,PAPI_STL_ICY,PAPI_LST_INS|10"
+  [T6]="papi_get_real_nsec|papi_read|4|${PAPI_EVENTS}|10"
 )
 
-# ---------------- 站点表（严格口径 77 站） ----------------
-# 来源: 归档 _per_rank_samples.json（同 class C、同进程数）筛选每 rank>=10 测点，
-# 再用归档 cntvct_el0+none 的 met_p50_ns 剔除中位数 >=1ms 的站点；
-# 运行时仍以本轮实测 met 数据复核（见 gate 阶段）。
-SITES_bt="r7_l1 r7_l2 r8_l1 r9_l1 r9_l2 r9_l3 r9_l4 r10_l1 r10_l2 r10_l3 r10_l4 r11_l1 r11_l2 r11_l3 r11_l4"
-SITES_cg="r3_l1 r3_l2 r3_l3 r3_l4 r3_l5 r3_l6 r3_l7 r3_l8 r4_l2"
+# ---------------- 站点表（2026-08-16 三节点矩阵：45 站全集） ----------------
+# 来源: NPC_experiments/slected_sites_2026-08-15.md（按 er 升序选出的 45 站，
+# 条件：1us <= 归档 T3 met p50 <= 1ms 且 n_met >= 10000；is 无入选站点不跑；
+# ep r3_l1 为确定性退化站，保留测量但图表单独标注）。
+# 运行时仍以本轮实测 met 数据复核资格（每 rank>=10 且 p50<1ms，见 gate 阶段）。
+SITES_bt="r7_l1 r7_l2 r8_l1 r9_l1 r9_l2 r10_l1 r10_l2 r11_l1 r11_l2"
+SITES_cg="r3_l2 r3_l3 r3_l4 r3_l5"
 SITES_ep="r2_l1 r3_l1"
-SITES_ft="r5_l1 r6_l1 r6_l2 r7_l1 r7_l2 r7_l3 r7_l4 r15_l1"
-SITES_is="r1_l2 r1_l3"
-SITES_lu="r3_l1 r4_l1 r7_l1 r7_l2 r8_l1 r8_l2 r9_l1 r9_l2"
-SITES_mg="r3_l1 r4_l1 r5_l1 r6_l1 r8_l1 r8_l2 r8_l3 r8_l4 r8_l5 r8_l6 r8_l7 r8_l8"
-SITES_sp="r6_l1 r6_l2 r7_l1 r8_l1 r8_l2 r8_l3 r8_l4 r8_l5 r8_l6 r9_l1 r9_l2 r9_l3 r9_l4 r9_l5 r9_l6 r10_l1 r10_l2 r10_l3 r10_l4 r10_l5 r10_l6"
-
-# 良质站点子集（--sites good）：T3（cntvct_el0+none）实测 er<0.05 且 treal 非退化
-GOOD_SITES_bt="r7_l1 r7_l2 r9_l2 r9_l3 r9_l4 r10_l1 r10_l2 r10_l3 r10_l4 r11_l2 r11_l3 r11_l4"
-GOOD_SITES_cg="r3_l2 r3_l5"
-GOOD_SITES_ep="r2_l1"
-GOOD_SITES_ft="r5_l1 r6_l1 r6_l2 r7_l1 r7_l2 r7_l3 r15_l1"
-GOOD_SITES_is="r1_l2"
-GOOD_SITES_lu="r3_l1 r4_l1 r7_l1 r8_l2 r9_l2"
-GOOD_SITES_mg="r8_l4 r8_l5 r8_l6 r8_l7"
-GOOD_SITES_sp="r6_l1 r6_l2 r8_l1 r8_l3 r8_l5 r8_l6 r9_l1 r9_l2 r9_l3 r9_l5 r9_l6 r10_l1 r10_l2 r10_l3 r10_l4 r10_l5 r10_l6"
+SITES_ft="r6_l1 r6_l2 r7_l1 r7_l2 r7_l3 r7_l4"
+SITES_lu="r3_l1 r4_l1 r7_l1 r7_l2 r8_l1 r8_l2 r9_l2"
+SITES_mg="r4_l1 r5_l1 r6_l1 r8_l3 r8_l4 r8_l5 r8_l6 r8_l7"
+SITES_sp="r6_l1 r6_l2 r7_l1 r8_l2 r8_l5 r9_l2 r9_l5 r10_l2 r10_l5"
 
 # ---------------- 解析参数 ----------------
 ONLY_BENCH=""
@@ -164,9 +201,13 @@ check_idle_node() {  # 启动前检查：有测量进程则拒绝
 
 run_mpi() {  # run_mpi BIN [ARGS...]；NPB_TIMER_FLAG=1 + 核心绑定；stdout 由调用方重定向
   local bin="$1"; shift
+  sleep "$SLEEP_BEFORE_KERNEL"   # kernel 运行前等待（节点恢复安静，前后各 5 秒）
   NPB_TIMER_FLAG=1 TACVAR_DATA_DIR="$data_root_abs" \
     timeout "$RUN_TIMEOUT" mpirun --map-by core --bind-to core -np "$np_this" \
     "$bin" "$@" < /dev/null
+  local rc=$?
+  sleep "$SLEEP_AFTER_KERNEL"    # kernel 运行后等待
+  return $rc
 }
 
 # ---------------- 主循环 ----------------
@@ -189,11 +230,7 @@ for tag in "${COMBOS_RUN[@]}"; do
 for bench in "${BENCH_LIST[@]}"; do
   bench_u="${bench^^}"
   np_this="${BENCH_NP[$bench]:-$NP}"
-  if [[ "$SITE_SET" == "good" ]]; then
-    site_list=$(eval echo \${GOOD_SITES_${bench}})
-  else
-    site_list=$(eval echo \$SITES_${bench})
-  fi
+  site_list=$(eval echo \${SITES_${bench}})   # 45 站全集（--sites good 已废弃）
   [[ -z "$ONLY_SITE" ]] || site_list=$(echo "$site_list" | tr ' ' '\n' | grep -x "$ONLY_SITE" || true)
   [[ -n "$site_list" ]] || { log "no sites for $bench (filter=$ONLY_SITE), skip"; continue; }
 
@@ -240,7 +277,7 @@ for bench in "${BENCH_LIST[@]}"; do
       log "FAIL $bench: build (normal) failed"
     fi
     if [[ $met_ok -eq 1 ]]; then
-      python3 "$SUITE/scripts/get_met_stat.py" "$data_root_abs" >> "$bench_log" 2>&1 \
+      ${PYTHON} "$SUITE/scripts/get_met_stat.py" "$data_root_abs" >> "$bench_log" 2>&1 \
         && echo "$bench,$bench_u.$CLASS,SUCCESSFUL,OK,,,0,0,0,,$data_root_abs,$(date '+%F %T')" >> "$MANIFEST"
     else
       echo "$bench,$bench_u.$CLASS,FAILED,,,,0,0,0,,$data_root_abs,$(date '+%F %T')" >> "$MANIFEST"
@@ -260,7 +297,7 @@ for bench in "${BENCH_LIST[@]}"; do
     echo "$rid $loc" >> "$planned"
   done
   gate_log="$data_root_abs/gate.log"
-  python3 - "$bench_u" "$CLASS" "$data_root_abs" "$planned" "$data_root_abs/sites_ok.txt" <<'PY' > "$gate_log" 2>&1
+  ${PYTHON} - "$bench_u" "$CLASS" "$data_root_abs" "$planned" "$data_root_abs/sites_ok.txt" <<'PY' > "$gate_log" 2>&1
 import csv, sys
 import numpy as np
 from collections import defaultdict
