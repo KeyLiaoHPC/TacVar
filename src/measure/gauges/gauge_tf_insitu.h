@@ -27,9 +27,7 @@
 
 #elif defined(__aarch64__)
 
-#ifndef TACVAR_NSTP
-#define TACVAR_NSTP 0
-#endif
+#include "timer_rate.h"
 
 #define TACVAR_TF_TICK_READ(raw) do { \
     uint64_t _tf_v; \
@@ -37,8 +35,10 @@
     (raw) = _tf_v; \
 } while (0)
 
+/* 实测/标定速率: g_tacvar_ns_per_tick (timer_rate.h), 由
+ * tacvar_rate_init() 从 TACVAR_NSPT_FILE 或 TACVAR_NSTP 装载。 */
 #define TACVAR_TF_TICK_TO_NS(ticks) \
-    ((int64_t)((uint64_t)(ticks) * (uint64_t)TACVAR_NSTP))
+    ((int64_t)((double)(uint64_t)(ticks) * g_tacvar_ns_per_tick))
 
 #else
 

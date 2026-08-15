@@ -6,6 +6,7 @@
 #define _GNU_SOURCE
 #endif
 #include "timer_util.h"
+#include "timer_rate.h"
 #include <stdio.h>
 #include <unistd.h>
 
@@ -70,6 +71,10 @@ int tacvar_tsc_calibrate(void)
             return -1;
     }
     g_tacvar_ns_per_tsc = 1e9 / (double)hz;
+    /* 若有实测 nspt 文件(TACVAR_NSPT_FILE), 用实测值覆盖 CPUID 名义值:
+     * 与 aarch64 共享同一装载入口, 保证 tick 轴换算统一。 */
+    if (tacvar_rate_init((const char *)0, g_tacvar_ns_per_tsc) == 0)
+        g_tacvar_ns_per_tsc = g_tacvar_ns_per_tick;
     return 0;
 }
 

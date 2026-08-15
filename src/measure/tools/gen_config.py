@@ -205,6 +205,7 @@ def emit_header(
     nstp: int,
     output_root: str,
     measure_root: Path,
+    nspt_file: str = "",
     tf_on: bool = False,
     tf_root: str = "",
     tf_nspg: float = 0.0,
@@ -251,6 +252,7 @@ def emit_header(
         f'#define TACVAR_COUNTER_BACKEND_NAME "{counter}"',
         f"#define TACVAR_COUNTER_COUNT {count}",
         f"#define TACVAR_NSTP {nstp}",
+        f'#define TACVAR_NSPT_FILE "{c_string(nspt_file)}"',
         f'#define TACVAR_OUTPUT_ROOT_DEFAULT "{output_root}"',
         f"#define TACVAR_TF_SAMPLING {1 if tf_on else 0}",
         f'#define TACVAR_TF_DATA_ROOT "{c_string(tf_root)}"',
@@ -314,7 +316,7 @@ def emit_mk(
     tf_loc: int = 0,
 ) -> None:
     resolved = resolve_native(timer, consumer)
-    objs = ["tacvar_measure.o", "tacvar_csv.o", "tacvar_tf.o"]
+    objs = ["tacvar_measure.o", "tacvar_csv.o", "tacvar_tf.o", "timer_rate.o"]
     cflags = [
         f"-I{measure_root}",
         f"-I{measure_root / 'include'}",
@@ -395,6 +397,7 @@ def main() -> None:
     cfg = parse_conf(conf)
     arch = detect_arch(args.compiler)
     timer, counter, names, count, nstp = validate(cfg, args.consumer, arch)
+    nspt_file = cfg.get("TACVAR_NSPT_FILE", "")
     output_root = cfg.get("TACVAR_OUTPUT_ROOT", ".")
     tf_on = parse_tf_mode(cfg.get("TACVAR_TF_SAMPLING_MODE", "OFF"))
     tf_root = resolve_tf_root(cfg.get("TACVAR_TF_DATA_ROOT", ""), conf.parent)
@@ -432,6 +435,7 @@ def main() -> None:
         nstp,
         output_root,
         measure_root,
+        nspt_file,
         tf_on,
         tf_root,
         tf_nspg,

@@ -55,6 +55,12 @@ $(OUTDIR)/tacvar_tf.o: $(MEASURE_ROOT)/tacvar_tf.c \
 $(OUTDIR)/timer_util.o: $(MEASURE_ROOT)/timers/timer_util.c
 	$(CC) $(CFLAGS) $(TACVAR_MEASURE_CFLAGS) -I$(OUTDIR) -c $< -o $@
 
+$(OUTDIR)/timer_rate.o: $(MEASURE_ROOT)/timers/timer_rate.c
+	$(CC) $(CFLAGS) $(TACVAR_MEASURE_CFLAGS) -I$(OUTDIR) \
+		-DTACVAR_HAS_GENERATED_CONFIG \
+		-include $(OUTDIR)/tacvar_generated_config.h \
+		-c $< -o $@
+
 $(OUTDIR)/counter_perf_event.o: $(MEASURE_ROOT)/counters/counter_perf_event.c \
 		$(OUTDIR)/tacvar_generated_config.h
 	$(CC) $(CFLAGS) $(TACVAR_MEASURE_CFLAGS) -I$(OUTDIR) \
