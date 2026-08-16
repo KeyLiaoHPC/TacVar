@@ -77,3 +77,8 @@ suites/lmbench/**/tacvar_build/
 suites/lmbench/**/*.smoke.bak
 suites/NPB3.4.4/NPB3.4-MPI/config/tacvar_build_x86_64/tacvar_generated_config.mk
 suites/NPB3.4.4/NPB3.4-MPI/MG/npbparams.h
+
+# Slim DualTF per-node copies (NFS measure trees, not this repo)
+TacVar_NPC_c920bn1/
+TacVar_NPC_cgnr6760pn1/
+TacVar_NPC_camd9755n2/

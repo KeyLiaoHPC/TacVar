@@ -212,12 +212,14 @@ def collect_new_tree_jobs(
     nspg: float,
     rid_f: int | None,
     lid_f: int | None,
+    kernel_f: str | None = None,
 ) -> list[tuple[str, str, Path, Path, Path, Path, int, int, int]]:
     """(k, c, met_dir, tfs_dir, tfe_dir, out_dir, rid, loc, ngauge)."""
     jobs = []
     tf_root = root / "tf"
     met_root = root / "met"
     filt_root = root / "filter"
+    kern = kernel_f.upper() if kernel_f else None
     if not tf_root.is_dir():
         return jobs
     for site_dir in sorted(tf_root.iterdir()):
@@ -230,6 +232,8 @@ def collect_new_tree_jobs(
         c = m.group(2).upper()
         rid = int(m.group(3))
         loc = int(m.group(4))
+        if kern is not None and k != kern:
+            continue
         if rid_f is not None and rid != rid_f:
             continue
         if lid_f is not None and loc != lid_f:
@@ -274,6 +278,9 @@ def run_one_site(
     nsamp: int,
     plow: float,
 ) -> bool:
+    if (out_dir / "wd.out").is_file():
+        print(f"skip {k}.{c} r{rid} l{loc}: wd.out exists", file=sys.stderr)
+        return True
     if ng < 1:
         print(f"skip {k}.{c} r{rid} l{loc}: ngauge < 1", file=sys.stderr)
         return False
@@ -316,6 +323,8 @@ def main() -> None:
                     help="only this region_id (default: all)")
     ap.add_argument("--lid", "--loc-id", type=int, default=None,
                     help="only this loc_id (default: all)")
+    ap.add_argument("--kernel", default=None,
+                    help="only this kernel name, e.g. bt (default: all)")
     ap.add_argument("--filt", default="", help="path to filt.x")
     ap.add_argument("--width", type=int, default=100)
     ap.add_argument("--nsamp", type=int, default=1000000)
@@ -335,7 +344,9 @@ def main() -> None:
     nsite = 0
     nmatch = 0
     if is_new_tree(root):
-        jobs = collect_new_tree_jobs(root, ngauge_tab, nspg, args.rid, args.lid)
+        jobs = collect_new_tree_jobs(
+            root, ngauge_tab, nspg, args.rid, args.lid, args.kernel
+        )
         nmatch = len(jobs)
         if not jobs and args.rid is None and args.lid is None:
             raise SystemExit(f"no tf/kernel.class_rx_lx/{{tfs,tfe}} under {root}")

@@ -46,7 +46,8 @@ for spec in "${KERNELS[@]}"; do
     : > "$site_log"
     log "==> FILT $COMBO $site"
     if ${PYTHON} "$SCRIPT_DIR/run_filt.py" "$combo_dir" \
-         --rid "$rid" --lid "$loc" --filt "$SUITE/bin/filt.x" >> "$site_log" 2>&1; then
+         --kernel "$_bench" --rid "$rid" --lid "$loc" \
+         --filt "$SUITE/bin/filt.x" >> "$site_log" 2>&1; then
       nsite=$((nsite + 1))
       log "OK   FILT $site"
     else

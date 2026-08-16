@@ -30,8 +30,8 @@ for timer in "${TIMERS[@]}"; do
       parse_kernel "$spec"
       np_this="$(np_for_kernel "$spec")"
       kdir="$combo/met/${_kc}"
-      if has_rank_csv "$kdir"; then
-        log "skip MET ${_kc} (has CSV in $kdir)"
+      if [[ -f "$kdir/.met_ok" ]]; then
+        log "skip MET ${_kc} (has .met_ok)"
         continue
       fi
 
@@ -59,6 +59,7 @@ for timer in "${TIMERS[@]}"; do
           log "FAIL MET ${_kc}: get_met_stat.py"
           continue
         fi
+        : > "$kdir/.met_ok"
         log "OK   MET ${_kc}"
       else
         cat "$bench_log.tmp" >> "$bench_log" 2>/dev/null || true
